@@ -50,6 +50,8 @@
 import Dashboard from './pages/Dashboard';
 import Scanner from './pages/Scanner';
 import PairDetail from './pages/PairDetail';
+import PaperTrading from './pages/PaperTrading';
+import Config from './pages/Config';
 import __Layout from './Layout.jsx';
 
 
@@ -57,6 +59,8 @@ export const PAGES = {
     "Dashboard": Dashboard,
     "Scanner": Scanner,
     "PairDetail": PairDetail,
+    "PaperTrading": PaperTrading,
+    "Config": Config,
 }
 
 export const pagesConfig = {
