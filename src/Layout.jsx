@@ -3,13 +3,14 @@ import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
   Search, Activity, LineChart, Wallet, Settings, Menu, X,
-  Flame, Bell
+  Flame, LayoutGrid
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
   { name: "Dashboard", icon: Activity, page: "Dashboard" },
   { name: "Scanner", icon: Search, page: "Scanner" },
+  { name: "Multi-Chart", icon: LayoutGrid, page: "MultiChart" },
   { name: "Detalii", icon: LineChart, page: "PairDetail" },
   { name: "Paper Trading", icon: Wallet, page: "PaperTrading" },
   { name: "Configurare", icon: Settings, page: "Config" },
