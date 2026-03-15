@@ -1,16 +1,29 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 import { fetchTopPairs, fetchKlines } from "../components/scanner/binanceApi";
 import { analyzePump } from "../components/scanner/pumpEngine";
 import ScannerRow from "../components/scanner/ScannerRow";
-import { Search, RefreshCw, Loader2, Filter, Download, ArrowUpDown } from "lucide-react";
+import TradingViewModal from "../components/scanner/TradingViewModal";
+import ScannerSettings from "../components/scanner/ScannerSettings";
+import { Search, RefreshCw, Loader2, Filter, Download, ArrowUpDown, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+const DEFAULT_SETTINGS = {
+  timeframe: "1h",
+  maxPairs: 50,
+  minVolume: 500000,
+  use_macd_confirmation: true,
+  use_bb_squeeze: true,
+  use_adx_filter: true,
+  use_obv_divergence: true,
+  use_volume_accumulation: true,
+  use_trend_filter: true,
+  use_market_regime: true,
+  noise_filter: true,
+};
+
 export default function Scanner() {
-  const navigate = useNavigate();
   const [pairs, setPairs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState(0);
@@ -19,11 +32,14 @@ export default function Scanner() {
   const [sortBy, setSortBy] = useState("score");
   const [sortDir, setSortDir] = useState("desc");
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [selectedSymbol, setSelectedSymbol] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setProgress(0);
-    const topPairs = await fetchTopPairs("USDT", 50, 500000);
+    const topPairs = await fetchTopPairs("USDT", settings.maxPairs, settings.minVolume);
     
     const analyzed = [];
     const batchSize = 5;
@@ -32,8 +48,8 @@ export default function Scanner() {
       const chunk = topPairs.slice(i, i + batchSize);
       const results = await Promise.all(
         chunk.map(async (pair) => {
-          const klines = await fetchKlines(pair.symbol, "1h", 100);
-          const analysis = analyzePump(klines);
+          const klines = await fetchKlines(pair.symbol, settings.timeframe, 100);
+          const analysis = analyzePump(klines, settings);
           return { ...pair, analysis };
         })
       );
@@ -44,11 +60,11 @@ export default function Scanner() {
 
     setLastUpdate(new Date());
     setLoading(false);
-  }, []);
+  }, [settings]);
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, []);
 
   const filtered = pairs
     .filter(p => {
@@ -88,11 +104,14 @@ export default function Scanner() {
         <div>
           <h1 className="text-2xl font-bold">🔍 Pump Scanner</h1>
           <p className="text-sm text-muted-foreground">
-            {pairs.length} perechi scanate · {filtered.length} afișate
+            {pairs.length} perechi scanate · {filtered.length} afișate · TF: <span className="text-primary font-mono">{settings.timeframe}</span>
             {lastUpdate && ` · ${lastUpdate.toLocaleTimeString("ro-RO")}`}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={() => setShowSettings(true)}>
+            <Settings className="w-4 h-4 mr-1" /> Setări
+          </Button>
           <Button variant="outline" size="sm" onClick={exportCSV}>
             <Download className="w-4 h-4 mr-1" /> CSV
           </Button>
@@ -112,7 +131,7 @@ export default function Scanner() {
       {loading && (
         <div className="bg-card border border-border rounded-lg p-3">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-muted-foreground">Analizare perechi...</span>
+            <span className="text-xs text-muted-foreground">Analizare perechi ({settings.timeframe})...</span>
             <span className="text-xs font-mono text-primary">{progress}%</span>
           </div>
           <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
@@ -182,13 +201,30 @@ export default function Scanner() {
                 <ScannerRow
                   key={pair.symbol}
                   pair={pair}
-                  onSelect={(sym) => navigate(createPageUrl("PairDetail") + `?symbol=${sym}`)}
+                  onSelect={(sym) => setSelectedSymbol(sym)}
                 />
               ))}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* TradingView Modal */}
+      {selectedSymbol && (
+        <TradingViewModal
+          symbol={selectedSymbol}
+          onClose={() => setSelectedSymbol(null)}
+        />
+      )}
+
+      {/* Settings Panel */}
+      {showSettings && (
+        <ScannerSettings
+          settings={settings}
+          onChange={setSettings}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
     </div>
   );
 }
