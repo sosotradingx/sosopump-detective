@@ -104,8 +104,9 @@ export default function PaperTrading() {
       const pnlPct = ((cur - trade.entry_price) / trade.entry_price) * 100;
       let reason = null;
 
-      if (autoConfig.autoTP && cur >= trade.take_profit) reason = "take_profit";
-      else if (autoConfig.autoSL && cur <= trade.stop_loss) reason = "stop_loss";
+      // Only check SL/TP if they are set and valid
+      if (autoConfig.autoTP && trade.take_profit > 0 && cur >= trade.take_profit) reason = "take_profit";
+      else if (autoConfig.autoSL && trade.stop_loss > 0 && cur <= trade.stop_loss) reason = "stop_loss";
 
       if (!reason && autoConfig.autoExitLowScore) {
         const kl = await fetchKlines(trade.symbol, autoConfig.timeframe, 60);
