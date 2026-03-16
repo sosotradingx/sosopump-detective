@@ -47,6 +47,10 @@ export default function PaperTrading() {
   });
   const [autoConfig, setAutoConfig] = useState(loadAutoConfig);
   const [showAutoSettings, setShowAutoSettings] = useState(false);
+
+  // Persist config & enabled state
+  useEffect(() => { saveAutoConfig(autoConfig); }, [autoConfig]);
+  useEffect(() => { try { localStorage.setItem("soso_auto_enabled", String(autoEnabled)); } catch {} }, [autoEnabled]);
   const [botLog, setBotLog] = useState([]);
   const [botRunning, setBotRunning] = useState(false);
   const autoIntervalRef = useRef(null);
