@@ -119,7 +119,7 @@ export default function PairDetail() {
       ) : (
         <div className="grid lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 space-y-4">
-            <PriceChart klines={klines} analysis={analysis} />
+            <CandleChart klines={klines} analysis={analysis} />
             
             {/* Order Book Mini */}
             {orderBook && (
