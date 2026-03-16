@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from "react";
-import { fetchKlines, fetchOrderBook, formatPrice, formatVolume } from "../components/scanner/binanceApi";
+import React, { useState, useEffect, useCallback } from "react";
+import { fetchKlines, fetchOrderBook, fetchTopPairs, formatPrice, formatVolume } from "../components/scanner/binanceApi";
 import { analyzePump } from "../components/scanner/pumpEngine";
-import PriceChart from "../components/chart/PriceChart";
+import CandleChart from "../components/chart/CandleChart";
 import IndicatorPanel from "../components/chart/IndicatorPanel";
 import ScoreBreakdown from "../components/dashboard/ScoreBreakdown";
-import { Loader2, RefreshCw, ArrowLeft } from "lucide-react";
+import { Loader2, RefreshCw, ArrowLeft, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -13,13 +13,18 @@ import { createPageUrl } from "@/utils";
 
 export default function PairDetail() {
   const urlParams = new URLSearchParams(window.location.search);
-  const symbol = urlParams.get("symbol") || "BTCUSDT";
-  
+  const [symbol, setSymbol] = useState(urlParams.get("symbol") || "BTCUSDT");
+  const [availablePairs, setAvailablePairs] = useState([]);
+
   const [klines, setKlines] = useState([]);
   const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(true);
   const [timeframe, setTimeframe] = useState("1h");
   const [orderBook, setOrderBook] = useState(null);
+
+  useEffect(() => {
+    fetchTopPairs("USDT", 80, 100000).then(pairs => setAvailablePairs(pairs.map(p => p.symbol)));
+  }, []);
 
   const loadData = async () => {
     setLoading(true);
