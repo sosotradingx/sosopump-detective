@@ -25,6 +25,18 @@ const DEFAULT_AUTO_CONFIG = {
   autoExitLowScore: true,
 };
 
+function loadAutoConfig() {
+  try {
+    const saved = localStorage.getItem("soso_auto_config");
+    if (saved) return { ...DEFAULT_AUTO_CONFIG, ...JSON.parse(saved) };
+  } catch {}
+  return DEFAULT_AUTO_CONFIG;
+}
+
+function saveAutoConfig(cfg) {
+  try { localStorage.setItem("soso_auto_config", JSON.stringify(cfg)); } catch {}
+}
+
 export default function PaperTrading() {
   const queryClient = useQueryClient();
   const [prices, setPrices] = useState({});
