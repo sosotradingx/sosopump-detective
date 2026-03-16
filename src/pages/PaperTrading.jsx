@@ -127,9 +127,8 @@ export default function PaperTrading() {
     }
 
     // --- Open new trades ---
-    const updatedOpen = openTrades.filter(t => !openTrades.some(x => x.id === t.id)); // will re-fetch below
     const freshOpen = (await base44.entities.PaperTrade.list("-created_date", 100)).filter(t => t.status === "open");
-    const openSymbols = freshOpen.map(t => t.symbol);
+    const openSymbols = new Set(freshOpen.map(t => t.symbol));
 
     if (freshOpen.length >= autoConfig.maxOpenTrades) {
       log(`⏸ Max poziții atinse (${autoConfig.maxOpenTrades})`);
@@ -138,23 +137,38 @@ export default function PaperTrading() {
       return;
     }
 
-    // Scan top pairs for pump signals
+    // Scan top pairs for pump signals - exclude already open symbols
     const candidates = pairs
-      .filter(p => !openSymbols.includes(p.symbol))
+      .filter(p => !openSymbols.has(p.symbol))
       .slice(0, 30);
 
     let opened = 0;
     for (const pair of candidates) {
       if (freshOpen.length + opened >= autoConfig.maxOpenTrades) break;
+      // Skip if we already opened this symbol in this run
+      if (openSymbols.has(pair.symbol)) continue;
 
       const kl = await fetchKlines(pair.symbol, autoConfig.timeframe, 80);
-      const analysis = analyzePump(kl);
+      const analysis = analyzePump(kl, {
+        use_macd_confirmation: autoConfig.useMacd ?? true,
+        use_bb_squeeze: autoConfig.useBbSqueeze ?? true,
+        use_adx_filter: autoConfig.useAdx ?? true,
+        use_obv_divergence: autoConfig.useObv ?? true,
+        use_trend_filter: autoConfig.useTrendFilter ?? true,
+        use_volume_accumulation: autoConfig.useVolAccum ?? true,
+        adx_threshold: autoConfig.adxThreshold ?? 20,
+        exhaustion_rsi: autoConfig.exhaustionRsi ?? 75,
+        volume_multiplier: autoConfig.volumeMultiplier ?? 2.5,
+        noise_filter: autoConfig.noiseFilter ?? true,
+      });
 
       if (analysis.totalScore >= autoConfig.minScore) {
         const price = priceMap[pair.symbol] || pair.price;
-        const quantity = Math.floor((autoConfig.tradeSize / price) * 10000) / 10000;
-        const stopLoss = price * (1 - autoConfig.stopLossPct / 100);
-        const takeProfit = price * (1 + autoConfig.takeProfitPct / 100);
+        // Use full precision for very small prices
+        const precisionFactor = price < 0.001 ? 1e10 : price < 0.01 ? 1e8 : price < 1 ? 1e6 : 1e4;
+        const quantity = Math.floor((autoConfig.tradeSize / price) * 1000) / 1000;
+        const stopLoss = Math.round(price * (1 - autoConfig.stopLossPct / 100) * precisionFactor) / precisionFactor;
+        const takeProfit = Math.round(price * (1 + autoConfig.takeProfitPct / 100) * precisionFactor) / precisionFactor;
 
         await base44.entities.PaperTrade.create({
           symbol: pair.symbol,
@@ -162,12 +176,13 @@ export default function PaperTrading() {
           status: "open",
           entry_price: price,
           quantity,
-          stop_loss: Math.round(stopLoss * 10000) / 10000,
-          take_profit: Math.round(takeProfit * 10000) / 10000,
+          stop_loss: stopLoss,
+          take_profit: takeProfit,
           pump_score_at_entry: analysis.totalScore,
           notes: `Auto | Score:${analysis.totalScore} | ${analysis.pumpStatus}`,
         });
-        log(`✅ DESCHIS ${pair.symbol} | Score: ${analysis.totalScore} | $${price.toFixed(4)}`);
+        openSymbols.add(pair.symbol); // prevent duplicates in same run
+        log(`✅ DESCHIS ${pair.symbol} | Score: ${analysis.totalScore} | SL:${stopLoss} TP:${takeProfit}`);
         opened++;
       }
     }
