@@ -42,8 +42,10 @@ export default function PaperTrading() {
   const [prices, setPrices] = useState({});
   const [openDialog, setOpenDialog] = useState(false);
   const [newTrade, setNewTrade] = useState({ symbol: "BTCUSDT", quantity: 0.01, stop_loss: 0, take_profit: 0 });
-  const [autoEnabled, setAutoEnabled] = useState(false);
-  const [autoConfig, setAutoConfig] = useState(DEFAULT_AUTO_CONFIG);
+  const [autoEnabled, setAutoEnabled] = useState(() => {
+    try { return localStorage.getItem("soso_auto_enabled") === "true"; } catch { return false; }
+  });
+  const [autoConfig, setAutoConfig] = useState(loadAutoConfig);
   const [showAutoSettings, setShowAutoSettings] = useState(false);
   const [botLog, setBotLog] = useState([]);
   const [botRunning, setBotRunning] = useState(false);
