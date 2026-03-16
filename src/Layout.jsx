@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
   Search, Activity, LineChart, Wallet, Settings, Menu, X,
-  Flame, LayoutGrid
+  Flame, LayoutGrid, BarChart2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
