@@ -58,9 +58,19 @@ export default function PairDetail() {
             </Button>
           </Link>
           <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold font-mono">{symbol.replace("USDT", "")}</h1>
-              <span className="text-muted-foreground">/USDT</span>
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Symbol selector */}
+              <Select value={symbol} onValueChange={setSymbol}>
+                <SelectTrigger className="w-44 bg-card font-mono font-bold text-lg">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-60">
+                  {availablePairs.map(s => (
+                    <SelectItem key={s} value={s} className="font-mono">{s.replace("USDT", "")}/USDT</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-muted-foreground hidden">/USDT</span>
               {analysis && (
                 <Badge className={`${
                   analysis.pumpStatus === "STRONG" ? "bg-pump-strong/20 text-pump-strong" :
