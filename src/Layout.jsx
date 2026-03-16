@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { name: "Dashboard", icon: Activity, page: "Dashboard" },
   { name: "Scanner", icon: Search, page: "Scanner" },
   { name: "Multi-Chart", icon: LayoutGrid, page: "MultiChart" },
+  { name: "PT Dashboard", icon: Activity, page: "TradingDashboard" },
   { name: "Detalii", icon: LineChart, page: "PairDetail" },
   { name: "Paper Trading", icon: Wallet, page: "PaperTrading" },
   { name: "Configurare", icon: Settings, page: "Config" },
