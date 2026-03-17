@@ -144,9 +144,19 @@ export default function PaperTrading() {
       return;
     }
 
-    // Scan top pairs for pump signals - exclude already open symbols
+    // Scan top pairs for pump signals - exclude already open symbols and those in cooldown
+    const now = Date.now();
     const candidates = pairs
       .filter(p => !openSymbols.has(p.symbol))
+      .filter(p => {
+        const cooldownUntil = cooldownMap.current[p.symbol] || 0;
+        if (cooldownUntil > now) {
+          const minsLeft = Math.ceil((cooldownUntil - now) / 60000);
+          // Only log once to avoid spam - skip silently
+          return false;
+        }
+        return true;
+      })
       .slice(0, 30);
 
     let opened = 0;
