@@ -48,6 +48,8 @@ export default function PaperTrading() {
   });
   const [autoConfig, setAutoConfig] = useState(loadAutoConfig);
   const [showAutoSettings, setShowAutoSettings] = useState(false);
+  // cooldownMap: { [symbol]: timestamp when cooldown expires }
+  const cooldownMap = useRef({});
 
   // Persist config & enabled state
   useEffect(() => { saveAutoConfig(autoConfig); }, [autoConfig]);
