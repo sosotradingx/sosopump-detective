@@ -62,12 +62,8 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
 
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">Max Poziții Deschise</Label>
-              <Select value={String(config.maxOpenTrades)} onValueChange={v => set("maxOpenTrades", Number(v))}>
-                <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {[1,2,3,5,7,10].map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Input type="number" min="1" max="100" step="1" value={config.maxOpenTrades}
+                onChange={e => set("maxOpenTrades", Math.max(1, Number(e.target.value)))} className="bg-secondary" />
             </div>
 
             <div>
