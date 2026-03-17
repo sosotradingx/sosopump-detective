@@ -196,7 +196,7 @@ export default function PaperTrading() {
           stop_loss: stopLoss,
           take_profit: takeProfit,
           pump_score_at_entry: analysis.totalScore,
-          notes: `Auto | Score:${analysis.totalScore} | ${analysis.pumpStatus}`,
+          notes: `Auto | TF:${autoConfig.timeframe} | Score:${analysis.totalScore} | ${analysis.pumpStatus}`,
         });
         openSymbols.add(pair.symbol); // prevent duplicates in same run
         log(`✅ DESCHIS ${pair.symbol} | Score: ${analysis.totalScore} | SL:${stopLoss} TP:${takeProfit}`);
