@@ -104,6 +104,25 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
             <ToggleRow label="Închide la Take Profit" configKey="autoTP" />
             <ToggleRow label="Închide la Stop Loss" configKey="autoSL" />
             <ToggleRow label="Exit la Scor < 20" configKey="autoExitLowScore" description="Închide dacă semnalul dispare" />
+
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">
+                🕐 Cooldown după TP/SL ({config.cooldownMinutes ?? 60} min)
+              </Label>
+              <Select value={String(config.cooldownMinutes ?? 60)} onValueChange={v => set("cooldownMinutes", Number(v))}>
+                <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">Fără cooldown</SelectItem>
+                  <SelectItem value="15">15 minute</SelectItem>
+                  <SelectItem value="30">30 minute</SelectItem>
+                  <SelectItem value="60">1 oră</SelectItem>
+                  <SelectItem value="120">2 ore</SelectItem>
+                  <SelectItem value="240">4 ore</SelectItem>
+                  <SelectItem value="1440">24 ore</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">Timp de așteptare înainte de a reintra pe același simbol după TP sau SL.</p>
+            </div>
           </section>
 
           {/* Indicator filters */}
