@@ -466,6 +466,9 @@ export default function PaperTrading() {
               <thead>
                 <tr className="text-xs text-muted-foreground border-b border-border">
                   <th className="text-left p-3">Pereche</th>
+                  <th className="text-left p-3">Deschis</th>
+                  <th className="text-left p-3">Închis</th>
+                  <th className="text-center p-3">TF</th>
                   <th className="text-right p-3">Intrare</th>
                   <th className="text-right p-3">Ieșire</th>
                   <th className="text-right p-3">P&L</th>
@@ -473,9 +476,19 @@ export default function PaperTrading() {
                 </tr>
               </thead>
               <tbody>
-                {closedTrades.slice(0, 20).map(trade => (
+                {closedTrades.slice(0, 50).map(trade => {
+                  const tfMatch = trade.notes?.match(/TF:(\S+)/);
+                  const tf = tfMatch ? tfMatch[1] : "—";
+                  const openTime = trade.created_date ? new Date(trade.created_date).toLocaleString("ro-RO", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }) : "—";
+                  const closeTime = trade.updated_date ? new Date(trade.updated_date).toLocaleString("ro-RO", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }) : "—";
+                  return (
                   <tr key={trade.id} className="border-b border-border/50">
-                    <td className="p-3 font-mono text-xs">{trade.symbol}</td>
+                    <td className="p-3 font-mono text-xs font-semibold">{trade.symbol}</td>
+                    <td className="p-3 text-xs text-muted-foreground font-mono">{openTime}</td>
+                    <td className="p-3 text-xs text-muted-foreground font-mono">{closeTime}</td>
+                    <td className="p-3 text-center">
+                      <span className="text-[10px] font-mono bg-secondary px-1.5 py-0.5 rounded text-muted-foreground">{tf}</span>
+                    </td>
                     <td className="p-3 text-right font-mono text-xs">${formatPrice(trade.entry_price)}</td>
                     <td className="p-3 text-right font-mono text-xs">${formatPrice(trade.exit_price)}</td>
                     <td className={`p-3 text-right font-mono font-bold text-xs ${(trade.pnl_percent || 0) >= 0 ? "text-chart-green" : "text-chart-red"}`}>
@@ -485,7 +498,8 @@ export default function PaperTrading() {
                       <Badge variant="outline" className="text-[10px]">{trade.exit_reason || "manual"}</Badge>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
