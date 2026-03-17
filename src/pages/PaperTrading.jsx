@@ -23,6 +23,7 @@ const DEFAULT_AUTO_CONFIG = {
   autoTP: true,
   autoSL: true,
   autoExitLowScore: true,
+  cooldownMinutes: 60, // minutes to wait before re-entering same symbol
 };
 
 function loadAutoConfig() {
