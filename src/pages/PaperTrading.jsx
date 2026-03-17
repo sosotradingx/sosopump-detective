@@ -394,6 +394,8 @@ export default function PaperTrading() {
               <thead>
                 <tr className="text-xs text-muted-foreground border-b border-border">
                   <th className="text-left p-3">Pereche</th>
+                  <th className="text-left p-3">Deschis</th>
+                  <th className="text-center p-3">TF</th>
                   <th className="text-right p-3">Intrare</th>
                   <th className="text-right p-3">Curent</th>
                   <th className="text-right p-3">P&L</th>
@@ -408,11 +410,18 @@ export default function PaperTrading() {
                   const pnl = ((curPrice - trade.entry_price) / trade.entry_price) * 100;
                   const pnlUsd = (curPrice - trade.entry_price) * trade.quantity;
                   const isAuto = trade.notes?.startsWith("Auto");
+                  const tfMatch = trade.notes?.match(/TF:(\S+)/);
+                  const tf = tfMatch ? tfMatch[1] : (isAuto ? autoConfig.timeframe : "—");
+                  const openTime = trade.created_date ? new Date(trade.created_date).toLocaleString("ro-RO", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }) : "—";
                   return (
                     <tr key={trade.id} className="border-b border-border/50 hover:bg-accent/30">
                       <td className="p-3 font-mono font-semibold">
                         {trade.symbol}
                         {isAuto && <span className="ml-1 text-[9px] text-primary bg-primary/10 px-1 py-0.5 rounded">BOT</span>}
+                      </td>
+                      <td className="p-3 text-xs text-muted-foreground font-mono">{openTime}</td>
+                      <td className="p-3 text-center">
+                        <span className="text-[10px] font-mono bg-secondary px-1.5 py-0.5 rounded text-muted-foreground">{tf}</span>
                       </td>
                       <td className="p-3 text-right font-mono">${formatPrice(trade.entry_price)}</td>
                       <td className="p-3 text-right font-mono">${formatPrice(curPrice)}</td>
