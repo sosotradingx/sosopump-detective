@@ -34,7 +34,18 @@ export default function Scanner() {
   const [lastUpdate, setLastUpdate] = useState(null);
   const [selectedSymbol, setSelectedSymbol] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem("soso_scanner_settings");
+      if (saved) return { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
+    } catch {}
+    return DEFAULT_SETTINGS;
+  });
+
+  // Persist scanner settings
+  useEffect(() => {
+    try { localStorage.setItem("soso_scanner_settings", JSON.stringify(settings)); } catch {}
+  }, [settings]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
