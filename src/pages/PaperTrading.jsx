@@ -126,7 +126,10 @@ export default function PaperTrading() {
           pnl_usd: Math.round(pnlUsd * 100) / 100,
           exit_reason: reason,
         });
-        log(`❌ ÎNCHIS ${trade.symbol} | ${reason} | P&L: ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%`);
+        // Set cooldown for this symbol
+        const cooldownMs = (autoConfig.cooldownMinutes || 60) * 60 * 1000;
+        cooldownMap.current[trade.symbol] = Date.now() + cooldownMs;
+        log(`❌ ÎNCHIS ${trade.symbol} | ${reason} | P&L: ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}% | Cooldown: ${autoConfig.cooldownMinutes}min`);
       }
     }
 
