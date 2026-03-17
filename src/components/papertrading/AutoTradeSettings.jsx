@@ -75,7 +75,11 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
               <Select value={config.timeframe} onValueChange={v => set("timeframe", v)}>
                 <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="1m">1 minut</SelectItem>
+                  <SelectItem value="3m">3 minute</SelectItem>
+                  <SelectItem value="5m">5 minute</SelectItem>
                   <SelectItem value="15m">15 minute</SelectItem>
+                  <SelectItem value="30m">30 minute</SelectItem>
                   <SelectItem value="1h">1 oră</SelectItem>
                   <SelectItem value="4h">4 ore</SelectItem>
                   <SelectItem value="1d">1 zi</SelectItem>
