@@ -42,14 +42,13 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
             <h3 className="text-xs font-mono uppercase text-muted-foreground border-b border-border pb-1">📊 Parametri Trading</h3>
 
             <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">Scor Minim Pump</Label>
+              <Label className="text-xs text-muted-foreground mb-1 block">Scor Minim Pump ({config.minScore})</Label>
               <Select value={String(config.minScore)} onValueChange={v => set("minScore", Number(v))}>
                 <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="40">40 - Moderat</SelectItem>
-                  <SelectItem value="55">55 - Mediu</SelectItem>
-                  <SelectItem value="70">70 - Ridicat</SelectItem>
-                  <SelectItem value="85">85 - Foarte Ridicat</SelectItem>
+                  {[10,20,30,40,50,60,70,80,90,100].map(n => (
+                    <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
