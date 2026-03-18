@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { fetchTopPairs, fetchKlines } from "../components/scanner/binanceApi";
+import { fetchTopPairs, fetchPerpetualPairs, fetchKlines, analyzePairsInBatches } from "../components/scanner/binanceApi";
 import { analyzePump } from "../components/scanner/pumpEngine";
 import ScannerRow from "../components/scanner/ScannerRow";
 import TradingViewModal from "../components/scanner/TradingViewModal";
@@ -15,8 +15,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const DEFAULT_SETTINGS = {
   timeframe: "1h",
-  maxPairs: 50,
+  maxPairs: 100,
   minVolume: 500000,
+  marketSource: "perpetuals",
   use_macd_confirmation: true,
   use_bb_squeeze: true,
   use_adx_filter: true,
@@ -76,36 +77,40 @@ export default function Scanner() {
   const loadData = useCallback(async () => {
     setLoading(true);
     setProgress(0);
-    const topPairs = await fetchTopPairs("USDT", settings.maxPairs, settings.minVolume);
-    
-    const analyzed = [];
-    const batchSize = 5;
-    
-    for (let i = 0; i < topPairs.length; i += batchSize) {
-      const chunk = topPairs.slice(i, i + batchSize);
-      const results = await Promise.all(
-        chunk.map(async (pair) => {
-          const klines = await fetchKlines(pair.symbol, settings.timeframe, 100);
-          const analysis = analyzePump(klines, settings);
-          return { ...pair, analysis };
-        })
-      );
-      analyzed.push(...results);
-      setProgress(Math.round((analyzed.length / topPairs.length) * 100));
-      setPairs([...analyzed]);
+    setPairs([]);
 
-      // Check for strong pump alerts
-      results.forEach(pair => {
-        const score = pair.analysis?.totalScore || 0;
-        const status = pair.analysis?.pumpStatus;
-        const key = `${pair.symbol}-${Math.floor(Date.now() / 300000)}`; // dedupe per 5min
+    const isPerpetual = settings.marketSource !== "spot";
+    const topPairs = isPerpetual
+      ? await fetchPerpetualPairs(settings.maxPairs, settings.minVolume)
+      : await fetchTopPairs("USDT", settings.maxPairs || 100, settings.minVolume);
+
+    const analyzed = [];
+
+    await analyzePairsInBatches(
+      topPairs,
+      async (pair) => {
+        const klines = await fetchKlines(pair.symbol, settings.timeframe, 100, isPerpetual);
+        const analysis = analyzePump(klines, settings);
+        const result = { ...pair, analysis };
+
+        // Check for strong pump alerts
+        const score = analysis?.totalScore || 0;
+        const status = analysis?.pumpStatus;
+        const key = `${pair.symbol}-${Math.floor(Date.now() / 300000)}`;
         if ((status === "STRONG" || score >= 75) && !notifiedRef.current.has(key)) {
           notifiedRef.current.add(key);
           notifyStrongPump(pair.symbol, score);
           addAlert("pump", pair.symbol, `Strong Pump detectat! Scor ${score}/100 · ${status}`);
         }
-      });
-    }
+
+        analyzed.push(result);
+        setProgress(Math.round((analyzed.length / topPairs.length) * 100));
+        setPairs([...analyzed]);
+        return result;
+      },
+      25,  // batch size
+      300, // delay ms between batches
+    );
 
     setLastUpdate(new Date());
     setLoading(false);
