@@ -56,7 +56,12 @@ export default function PaperTrading() {
   useEffect(() => { try { localStorage.setItem("soso_auto_enabled", String(autoEnabled)); } catch {} }, [autoEnabled]);
   const [botLog, setBotLog] = useState([]);
   const [botRunning, setBotRunning] = useState(false);
+  const botRunningRef = useRef(false);
+  const autoConfigRef = useRef(autoConfig);
   const autoIntervalRef = useRef(null);
+
+  // Keep ref in sync with state
+  useEffect(() => { autoConfigRef.current = autoConfig; }, [autoConfig]);
 
   const { data: trades = [], isLoading } = useQuery({
     queryKey: ["paper-trades"],
