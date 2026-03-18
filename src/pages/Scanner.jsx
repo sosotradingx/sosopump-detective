@@ -93,11 +93,23 @@ export default function Scanner() {
       analyzed.push(...results);
       setProgress(Math.round((analyzed.length / topPairs.length) * 100));
       setPairs([...analyzed]);
+
+      // Check for strong pump alerts
+      results.forEach(pair => {
+        const score = pair.analysis?.totalScore || 0;
+        const status = pair.analysis?.pumpStatus;
+        const key = `${pair.symbol}-${Math.floor(Date.now() / 300000)}`; // dedupe per 5min
+        if ((status === "STRONG" || score >= 75) && !notifiedRef.current.has(key)) {
+          notifiedRef.current.add(key);
+          notifyStrongPump(pair.symbol, score);
+          addAlert("pump", pair.symbol, `Strong Pump detectat! Scor ${score}/100 · ${status}`);
+        }
+      });
     }
 
     setLastUpdate(new Date());
     setLoading(false);
-  }, [settings]);
+  }, [settings, notifyStrongPump, addAlert]);
 
   useEffect(() => {
     loadData();
