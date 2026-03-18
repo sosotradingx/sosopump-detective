@@ -68,9 +68,14 @@ export default function ScannerRow({ pair, onSelect, isFavorite, onToggleFavorit
         {formatVolume(pair.quoteVolume)}
       </td>
       <td className="p-3 text-center">
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onSelect?.(pair.symbol)}>
-          <Eye className="w-3 h-3" />
-        </Button>
+        <div className="flex items-center gap-1 justify-center">
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onToggleFavorite?.()}>
+            <Star className={`w-3 h-3 ${isFavorite ? "fill-chart-gold text-chart-gold" : "text-muted-foreground"}`} />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onSelect?.(pair.symbol)}>
+            <Eye className="w-3 h-3" />
+          </Button>
+        </div>
       </td>
     </tr>
   );
