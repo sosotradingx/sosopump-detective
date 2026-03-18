@@ -284,6 +284,8 @@ export default function Scanner() {
                   key={pair.symbol}
                   pair={pair}
                   onSelect={(sym) => setSelectedSymbol(sym)}
+                  isFavorite={isFavorite(pair.symbol)}
+                  onToggleFavorite={() => toggleFavorite(pair.symbol)}
                 />
               ))}
             </tbody>
