@@ -193,6 +193,22 @@ export default function Scanner() {
         </div>
       </div>
 
+      {/* Alerts Panel */}
+      {showAlerts && (
+        <AlertsPanel
+          alerts={alerts}
+          onClear={(i) => setAlerts(prev => prev.filter((_, idx) => idx !== i))}
+          onClearAll={() => setAlerts([])}
+        />
+      )}
+
+      {/* Favorites info */}
+      {showFavoritesOnly && favorites.length === 0 && (
+        <div className="bg-secondary/40 border border-border rounded-lg p-3 text-xs text-muted-foreground text-center">
+          Niciun favorit adăugat. Apasă ⭐ pe orice pereche din tabel.
+        </div>
+      )}
+
       {/* Progress */}
       {loading && (
         <div className="bg-card border border-border rounded-lg p-3">
