@@ -43,19 +43,37 @@ export default function ScannerSettings({ settings, onChange, onClose }) {
             </Select>
           </section>
 
+          {/* Market Source */}
+          <section>
+            <h3 className="text-xs font-mono uppercase text-muted-foreground mb-3">Sursă Date</h3>
+            <Select value={settings.marketSource || "perpetuals"} onValueChange={v => set("marketSource", v)}>
+              <SelectTrigger className="bg-secondary">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="perpetuals">🔮 Perpetuals Futures (~600)</SelectItem>
+                <SelectItem value="spot">📈 Spot Market</SelectItem>
+              </SelectContent>
+            </Select>
+          </section>
+
           {/* Pairs limit */}
           <section>
-            <h3 className="text-xs font-mono uppercase text-muted-foreground mb-3">Număr Perechi</h3>
+            <h3 className="text-xs font-mono uppercase text-muted-foreground mb-3">Număr Perechi (Top N)</h3>
             <Select value={String(settings.maxPairs)} onValueChange={v => set("maxPairs", Number(v))}>
               <SelectTrigger className="bg-secondary">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="20">Top 20</SelectItem>
                 <SelectItem value="50">Top 50</SelectItem>
                 <SelectItem value="100">Top 100</SelectItem>
+                <SelectItem value="200">Top 200</SelectItem>
+                <SelectItem value="300">Top 300</SelectItem>
+                <SelectItem value="500">Top 500</SelectItem>
+                <SelectItem value="0">Toate (~600)</SelectItem>
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground mt-1">Sortate după volum 24h descrescător. Batch-uri de 25 cu pauze safe.</p>
           </section>
 
           {/* Indicators */}

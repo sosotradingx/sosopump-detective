@@ -81,6 +81,33 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
                 </SelectContent>
               </Select>
             </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Sursă Piață</Label>
+              <Select value={config.marketSource || "perpetuals"} onValueChange={v => set("marketSource", v)}>
+                <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="perpetuals">🔮 Perpetuals Futures</SelectItem>
+                  <SelectItem value="spot">📈 Spot Market</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Perechi Scanate (Top N)</Label>
+              <Select value={String(config.scanPairs ?? 100)} onValueChange={v => set("scanPairs", Number(v))}>
+                <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="50">Top 50</SelectItem>
+                  <SelectItem value="100">Top 100</SelectItem>
+                  <SelectItem value="200">Top 200</SelectItem>
+                  <SelectItem value="300">Top 300</SelectItem>
+                  <SelectItem value="500">Top 500</SelectItem>
+                  <SelectItem value="0">Toate (~600)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">Batch-uri de 25 cu pauze 300ms. Mai multe perechi = scan mai lent dar mai complet.</p>
+            </div>
           </section>
 
           {/* Risk management */}
