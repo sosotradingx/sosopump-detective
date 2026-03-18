@@ -94,9 +94,11 @@ export default function PaperTrading() {
 
   // --- Auto-trading logic ---
   const runAutoBot = useCallback(async () => {
-    if (botRunning) return;
+    if (botRunningRef.current) return;
+    botRunningRef.current = true;
     setBotRunning(true);
 
+    const cfg = autoConfigRef.current;
     const currentTrades = await base44.entities.PaperTrade.list("-created_date", 100);
     const openTrades = currentTrades.filter(t => t.status === "open");
     const pairs = await fetchTopPairs("USDT", 50, 500000);
@@ -112,12 +114,11 @@ export default function PaperTrading() {
       const pnlPct = ((cur - trade.entry_price) / trade.entry_price) * 100;
       let reason = null;
 
-      // Only check SL/TP if they are set and valid
-      if (autoConfig.autoTP && trade.take_profit > 0 && cur >= trade.take_profit) reason = "take_profit";
-      else if (autoConfig.autoSL && trade.stop_loss > 0 && cur <= trade.stop_loss) reason = "stop_loss";
+      if (cfg.autoTP && trade.take_profit > 0 && cur >= trade.take_profit) reason = "take_profit";
+      else if (cfg.autoSL && trade.stop_loss > 0 && cur <= trade.stop_loss) reason = "stop_loss";
 
-      if (!reason && autoConfig.autoExitLowScore) {
-        const kl = await fetchKlines(trade.symbol, autoConfig.timeframe, 60);
+      if (!reason && cfg.autoExitLowScore) {
+        const kl = await fetchKlines(trade.symbol, cfg.timeframe, 60);
         const analysis = analyzePump(kl);
         if (analysis.totalScore < 20) reason = "adx_exhaustion";
       }
@@ -131,10 +132,9 @@ export default function PaperTrading() {
           pnl_usd: Math.round(pnlUsd * 100) / 100,
           exit_reason: reason,
         });
-        // Set cooldown for this symbol
-        const cooldownMs = (autoConfig.cooldownMinutes || 60) * 60 * 1000;
+        const cooldownMs = (cfg.cooldownMinutes || 60) * 60 * 1000;
         cooldownMap.current[trade.symbol] = Date.now() + cooldownMs;
-        log(`❌ ÎNCHIS ${trade.symbol} | ${reason} | P&L: ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}% | Cooldown: ${autoConfig.cooldownMinutes}min`);
+        log(`❌ ÎNCHIS ${trade.symbol} | ${reason} | P&L: ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}% | Cooldown: ${cfg.cooldownMinutes}min`);
       }
     }
 
@@ -142,55 +142,45 @@ export default function PaperTrading() {
     const freshOpen = (await base44.entities.PaperTrade.list("-created_date", 100)).filter(t => t.status === "open");
     const openSymbols = new Set(freshOpen.map(t => t.symbol));
 
-    if (freshOpen.length >= autoConfig.maxOpenTrades) {
-      log(`⏸ Max poziții atinse (${autoConfig.maxOpenTrades})`);
+    if (freshOpen.length >= cfg.maxOpenTrades) {
+      log(`⏸ Max poziții atinse (${cfg.maxOpenTrades})`);
+      botRunningRef.current = false;
       setBotRunning(false);
       queryClient.invalidateQueries({ queryKey: ["paper-trades"] });
       return;
     }
 
-    // Scan top pairs for pump signals - exclude already open symbols and those in cooldown
     const now = Date.now();
     const candidates = pairs
       .filter(p => !openSymbols.has(p.symbol))
-      .filter(p => {
-        const cooldownUntil = cooldownMap.current[p.symbol] || 0;
-        if (cooldownUntil > now) {
-          const minsLeft = Math.ceil((cooldownUntil - now) / 60000);
-          // Only log once to avoid spam - skip silently
-          return false;
-        }
-        return true;
-      })
+      .filter(p => !(cooldownMap.current[p.symbol] > now))
       .slice(0, 30);
 
     let opened = 0;
     for (const pair of candidates) {
-      if (freshOpen.length + opened >= autoConfig.maxOpenTrades) break;
-      // Skip if we already opened this symbol in this run
+      if (freshOpen.length + opened >= cfg.maxOpenTrades) break;
       if (openSymbols.has(pair.symbol)) continue;
 
-      const kl = await fetchKlines(pair.symbol, autoConfig.timeframe, 80);
+      const kl = await fetchKlines(pair.symbol, cfg.timeframe, 80);
       const analysis = analyzePump(kl, {
-        use_macd_confirmation: autoConfig.useMacd ?? true,
-        use_bb_squeeze: autoConfig.useBbSqueeze ?? true,
-        use_adx_filter: autoConfig.useAdx ?? true,
-        use_obv_divergence: autoConfig.useObv ?? true,
-        use_trend_filter: autoConfig.useTrendFilter ?? true,
-        use_volume_accumulation: autoConfig.useVolAccum ?? true,
-        adx_threshold: autoConfig.adxThreshold ?? 20,
-        exhaustion_rsi: autoConfig.exhaustionRsi ?? 75,
-        volume_multiplier: autoConfig.volumeMultiplier ?? 2.5,
-        noise_filter: autoConfig.noiseFilter ?? true,
+        use_macd_confirmation: cfg.useMacd ?? true,
+        use_bb_squeeze: cfg.useBbSqueeze ?? true,
+        use_adx_filter: cfg.useAdx ?? true,
+        use_obv_divergence: cfg.useObv ?? true,
+        use_trend_filter: cfg.useTrendFilter ?? true,
+        use_volume_accumulation: cfg.useVolAccum ?? true,
+        adx_threshold: cfg.adxThreshold ?? 20,
+        exhaustion_rsi: cfg.exhaustionRsi ?? 75,
+        volume_multiplier: cfg.volumeMultiplier ?? 2.5,
+        noise_filter: cfg.noiseFilter ?? true,
       });
 
-      if (analysis.totalScore >= autoConfig.minScore) {
+      if (analysis.totalScore >= cfg.minScore) {
         const price = priceMap[pair.symbol] || pair.price;
-        // Use full precision for very small prices
         const precisionFactor = price < 0.001 ? 1e10 : price < 0.01 ? 1e8 : price < 1 ? 1e6 : 1e4;
-        const quantity = Math.floor((autoConfig.tradeSize / price) * 1000) / 1000;
-        const stopLoss = Math.round(price * (1 - autoConfig.stopLossPct / 100) * precisionFactor) / precisionFactor;
-        const takeProfit = Math.round(price * (1 + autoConfig.takeProfitPct / 100) * precisionFactor) / precisionFactor;
+        const quantity = Math.floor((cfg.tradeSize / price) * 1000) / 1000;
+        const stopLoss = Math.round(price * (1 - cfg.stopLossPct / 100) * precisionFactor) / precisionFactor;
+        const takeProfit = Math.round(price * (1 + cfg.takeProfitPct / 100) * precisionFactor) / precisionFactor;
 
         await base44.entities.PaperTrade.create({
           symbol: pair.symbol,
@@ -201,9 +191,9 @@ export default function PaperTrading() {
           stop_loss: stopLoss,
           take_profit: takeProfit,
           pump_score_at_entry: analysis.totalScore,
-          notes: `Auto | TF:${autoConfig.timeframe} | Score:${analysis.totalScore} | ${analysis.pumpStatus}`,
+          notes: `Auto | TF:${cfg.timeframe} | Score:${analysis.totalScore} | ${analysis.pumpStatus}`,
         });
-        openSymbols.add(pair.symbol); // prevent duplicates in same run
+        openSymbols.add(pair.symbol);
         log(`✅ DESCHIS ${pair.symbol} | Score: ${analysis.totalScore} | SL:${stopLoss} TP:${takeProfit}`);
         opened++;
       }
@@ -211,8 +201,9 @@ export default function PaperTrading() {
 
     if (opened === 0) log("🔍 Scan complet, niciun semnal nou găsit.");
     queryClient.invalidateQueries({ queryKey: ["paper-trades"] });
+    botRunningRef.current = false;
     setBotRunning(false);
-  }, [autoConfig, botRunning, queryClient]);
+  }, [queryClient]);
 
   // Convert timeframe string to milliseconds
   const tfToMs = (tf) => {
