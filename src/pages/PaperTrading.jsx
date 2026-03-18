@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { base44 } from "@/api/base44Client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchTopPairs, fetchKlines, formatPrice, formatVolume } from "../components/scanner/binanceApi";
+import { fetchTopPairs, fetchPerpetualPairs, fetchKlines, formatPrice, formatVolume } from "../components/scanner/binanceApi";
 import { analyzePump } from "../components/scanner/pumpEngine";
 import AutoTradeSettings from "../components/papertrading/AutoTradeSettings";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,9 @@ const DEFAULT_AUTO_CONFIG = {
   autoTP: true,
   autoSL: true,
   autoExitLowScore: true,
-  cooldownMinutes: 60, // minutes to wait before re-entering same symbol
+  cooldownMinutes: 60,
+  marketSource: "perpetuals",
+  scanPairs: 100,
 };
 
 function loadAutoConfig() {
@@ -101,7 +103,10 @@ export default function PaperTrading() {
     const cfg = autoConfigRef.current;
     const currentTrades = await base44.entities.PaperTrade.list("-created_date", 100);
     const openTrades = currentTrades.filter(t => t.status === "open");
-    const pairs = await fetchTopPairs("USDT", 50, 500000);
+    const isPerpetual = cfg.marketSource !== "spot";
+    const pairs = isPerpetual
+      ? await fetchPerpetualPairs(cfg.scanPairs ?? 100, 500000)
+      : await fetchTopPairs("USDT", cfg.scanPairs ?? 100, 500000);
     const priceMap = {};
     pairs.forEach(p => { priceMap[p.symbol] = p.price; });
     setPrices(priceMap);
@@ -118,7 +123,7 @@ export default function PaperTrading() {
       else if (cfg.autoSL && trade.stop_loss > 0 && cur <= trade.stop_loss) reason = "stop_loss";
 
       if (!reason && cfg.autoExitLowScore) {
-        const kl = await fetchKlines(trade.symbol, cfg.timeframe, 60);
+        const kl = await fetchKlines(trade.symbol, cfg.timeframe, 60, isPerpetual);
         const analysis = analyzePump(kl);
         if (analysis.totalScore < 20) reason = "adx_exhaustion";
       }
@@ -161,7 +166,7 @@ export default function PaperTrading() {
       if (freshOpen.length + opened >= cfg.maxOpenTrades) break;
       if (openSymbols.has(pair.symbol)) continue;
 
-      const kl = await fetchKlines(pair.symbol, cfg.timeframe, 80);
+      const kl = await fetchKlines(pair.symbol, cfg.timeframe, 80, isPerpetual);
       const analysis = analyzePump(kl, {
         use_macd_confirmation: cfg.useMacd ?? true,
         use_bb_squeeze: cfg.useBbSqueeze ?? true,
