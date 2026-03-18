@@ -4,6 +4,14 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowUpRight, ArrowDownRight, Eye, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+const statusConfig = {
+  STRONG:   { bg: "bg-pump-strong/10",   text: "text-pump-strong",   border: "border-pump-strong/30" },
+  ACTIVE:   { bg: "bg-pump-active/10",   text: "text-pump-active",   border: "border-pump-active/30" },
+  WEAK:     { bg: "bg-pump-weak/10",     text: "text-pump-weak",     border: "border-pump-weak/30" },
+  EARLY:    { bg: "bg-pump-early/10",    text: "text-pump-early",    border: "border-pump-early/30" },
+  INACTIVE: { bg: "bg-muted/10",         text: "text-muted-foreground", border: "border-border" },
+};
+
 export default function ScannerRow({ pair, onSelect, isFavorite, onToggleFavorite }) {
   const a = pair.analysis || {};
   const sc = statusConfig[a.pumpStatus] || statusConfig.INACTIVE;
