@@ -211,17 +211,28 @@ export default function PaperTrading() {
     return map[tf] || 60000;
   };
 
-  // Start/stop auto bot interval — interval matches selected timeframe
+  // Stable ref to runAutoBot so interval doesn't need to re-register
+  const runAutoBotRef = useRef(runAutoBot);
+  useEffect(() => { runAutoBotRef.current = runAutoBot; }, [runAutoBot]);
+
+  // Start/stop auto bot interval — only re-runs when autoEnabled changes
   useEffect(() => {
-    if (autoEnabled) {
-      runAutoBot();
-      const intervalMs = tfToMs(autoConfig.timeframe);
-      autoIntervalRef.current = setInterval(runAutoBot, intervalMs);
-    } else {
+    if (!autoEnabled) {
       clearInterval(autoIntervalRef.current);
+      return;
     }
-    return () => clearInterval(autoIntervalRef.current);
-  }, [autoEnabled, runAutoBot, autoConfig.timeframe]);
+    // Run immediately, then schedule based on current timeframe
+    runAutoBotRef.current();
+    const scheduleNext = () => {
+      const intervalMs = tfToMs(autoConfigRef.current.timeframe);
+      autoIntervalRef.current = setTimeout(() => {
+        runAutoBotRef.current();
+        scheduleNext();
+      }, intervalMs);
+    };
+    scheduleNext();
+    return () => clearTimeout(autoIntervalRef.current);
+  }, [autoEnabled]);
 
   const openTrades = trades.filter(t => t.status === "open");
   const closedTrades = trades.filter(t => t.status === "closed");
