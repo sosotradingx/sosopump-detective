@@ -156,14 +156,18 @@ export default function PaperTrading() {
     }
 
     const now = Date.now();
+    // Take top candidates by volume, process in batches of 25 with 300ms delay
     const candidates = pairs
       .filter(p => !openSymbols.has(p.symbol))
       .filter(p => !(cooldownMap.current[p.symbol] > now))
-      .slice(0, 30);
+      .slice(0, Math.min(cfg.scanPairs ?? 100, pairs.length));
 
     let opened = 0;
-    for (const pair of candidates) {
-      if (freshOpen.length + opened >= cfg.maxOpenTrades) break;
+    const BATCH = 25;
+    outer: for (let bi = 0; bi < candidates.length; bi += BATCH) {
+      const chunk = candidates.slice(bi, bi + BATCH);
+      for (const pair of chunk) {
+      if (freshOpen.length + opened >= cfg.maxOpenTrades) break outer;
       if (openSymbols.has(pair.symbol)) continue;
 
       const kl = await fetchKlines(pair.symbol, cfg.timeframe, 80, isPerpetual);
@@ -202,6 +206,9 @@ export default function PaperTrading() {
         log(`✅ DESCHIS ${pair.symbol} | Score: ${analysis.totalScore} | SL:${stopLoss} TP:${takeProfit}`);
         opened++;
       }
+      }
+      // Delay between batches to respect rate limits
+      if (bi + BATCH < candidates.length) await new Promise(r => setTimeout(r, 300));
     }
 
     if (opened === 0) log("🔍 Scan complet, niciun semnal nou găsit.");
