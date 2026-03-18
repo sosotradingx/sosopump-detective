@@ -209,16 +209,23 @@ export default function PaperTrading() {
     setBotRunning(false);
   }, [autoConfig, botRunning, queryClient]);
 
-  // Start/stop auto bot interval
+  // Convert timeframe string to milliseconds
+  const tfToMs = (tf) => {
+    const map = { "1m": 60000, "3m": 180000, "5m": 300000, "15m": 900000, "30m": 1800000, "1h": 3600000, "4h": 14400000, "1d": 86400000 };
+    return map[tf] || 60000;
+  };
+
+  // Start/stop auto bot interval — interval matches selected timeframe
   useEffect(() => {
     if (autoEnabled) {
       runAutoBot();
-      autoIntervalRef.current = setInterval(runAutoBot, 60000);
+      const intervalMs = tfToMs(autoConfig.timeframe);
+      autoIntervalRef.current = setInterval(runAutoBot, intervalMs);
     } else {
       clearInterval(autoIntervalRef.current);
     }
     return () => clearInterval(autoIntervalRef.current);
-  }, [autoEnabled, runAutoBot]);
+  }, [autoEnabled, runAutoBot, autoConfig.timeframe]);
 
   const openTrades = trades.filter(t => t.status === "open");
   const closedTrades = trades.filter(t => t.status === "closed");
