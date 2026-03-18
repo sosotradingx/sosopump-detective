@@ -117,6 +117,7 @@ export default function Scanner() {
 
   const filtered = pairs
     .filter(p => {
+      if (showFavoritesOnly && !isFavorite(p.symbol)) return false;
       if (search && !p.symbol.toLowerCase().includes(search.toLowerCase())) return false;
       if (statusFilter === "active") return p.analysis?.pumpStatus === "STRONG" || p.analysis?.pumpStatus === "ACTIVE";
       if (statusFilter === "early") return p.analysis?.hasEarlyWarning;
