@@ -1,18 +1,12 @@
 import React from "react";
 import { formatPrice, formatVolume } from "./binanceApi";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpRight, ArrowDownRight, Eye } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, Eye, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-const statusConfig = {
-  STRONG: { bg: "bg-pump-strong/15", text: "text-pump-strong", border: "border-pump-strong/30" },
-  ACTIVE: { bg: "bg-pump-active/15", text: "text-pump-active", border: "border-pump-active/30" },
-  WEAK: { bg: "bg-pump-weak/15", text: "text-pump-weak", border: "border-pump-weak/30" },
-  EARLY: { bg: "bg-pump-early/15", text: "text-pump-early", border: "border-pump-early/30" },
-  INACTIVE: { bg: "bg-pump-inactive/10", text: "text-pump-inactive", border: "border-pump-inactive/20" },
-};
+...
 
-export default function ScannerRow({ pair, onSelect }) {
+export default function ScannerRow({ pair, onSelect, isFavorite, onToggleFavorite }) {
   const a = pair.analysis || {};
   const sc = statusConfig[a.pumpStatus] || statusConfig.INACTIVE;
   const positive = pair.priceChangePercent >= 0;
