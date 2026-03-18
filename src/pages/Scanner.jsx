@@ -159,6 +159,22 @@ export default function Scanner() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline" size="sm"
+            className={showFavoritesOnly ? "border-chart-gold text-chart-gold" : ""}
+            onClick={() => setShowFavoritesOnly(v => !v)}
+          >
+            <Star className={`w-4 h-4 mr-1 ${showFavoritesOnly ? "fill-chart-gold text-chart-gold" : ""}`} />
+            Favorite {favorites.length > 0 && `(${favorites.length})`}
+          </Button>
+          <Button
+            variant="outline" size="sm"
+            className={showAlerts ? "border-primary text-primary" : ""}
+            onClick={() => setShowAlerts(v => !v)}
+          >
+            <Bell className="w-4 h-4 mr-1" />
+            Alerte {alerts.length > 0 && <span className="ml-1 bg-destructive text-white text-[9px] rounded-full px-1">{alerts.length}</span>}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setShowSettings(true)}>
             <Settings className="w-4 h-4 mr-1" /> Setări
           </Button>
