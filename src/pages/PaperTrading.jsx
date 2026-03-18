@@ -348,7 +348,7 @@ export default function PaperTrading() {
           <div className="flex items-center gap-2 mb-2">
             <Activity className="w-4 h-4 text-pump-strong" />
             <span className="text-xs font-mono font-semibold text-pump-strong">BOT ACTIV</span>
-            <span className="text-xs text-muted-foreground">· Scor minim: {autoConfig.minScore} · Max: {autoConfig.maxOpenTrades} poziții · SL: {autoConfig.stopLossPct}% · TP: {autoConfig.takeProfitPct}%</span>
+            <span className="text-xs text-muted-foreground">· TF: <span className="text-primary font-mono">{autoConfig.timeframe}</span> · Scan la fiecare <span className="text-primary font-mono">{autoConfig.timeframe}</span> · Scor minim: {autoConfig.minScore} · Max: {autoConfig.maxOpenTrades} · SL: {autoConfig.stopLossPct}% · TP: {autoConfig.takeProfitPct}%</span>
           </div>
           {botLog.length > 0 && (
             <div className="bg-background/50 rounded-lg p-2 max-h-24 overflow-y-auto space-y-0.5">
