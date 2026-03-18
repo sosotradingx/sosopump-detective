@@ -1,10 +1,14 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { fetchTopPairs, fetchKlines } from "../components/scanner/binanceApi";
 import { analyzePump } from "../components/scanner/pumpEngine";
 import ScannerRow from "../components/scanner/ScannerRow";
 import TradingViewModal from "../components/scanner/TradingViewModal";
 import ScannerSettings from "../components/scanner/ScannerSettings";
-import { Search, RefreshCw, Loader2, Filter, Download, ArrowUpDown, Settings } from "lucide-react";
+import AlertsPanel from "../components/alerts/AlertsPanel";
+import { useFavorites } from "@/hooks/useFavorites";
+import { useNotifications } from "@/hooks/useNotifications";
+import { useVolumeMonitor } from "@/hooks/useVolumeMonitor";
+import { Search, RefreshCw, Loader2, Filter, Download, ArrowUpDown, Settings, Star, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -34,6 +38,28 @@ export default function Scanner() {
   const [lastUpdate, setLastUpdate] = useState(null);
   const [selectedSymbol, setSelectedSymbol] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [alerts, setAlerts] = useState([]);
+  const [showAlerts, setShowAlerts] = useState(false);
+  const notifiedRef = useRef(new Set());
+  const { favorites, toggleFavorite, isFavorite } = useFavorites();
+  const { notifyStrongPump, notifyVolumeSpike, permission } = useNotifications();
+
+  const addAlert = useCallback((type, symbol, message) => {
+    const time = new Date().toLocaleTimeString("ro-RO");
+    setAlerts(prev => [{ type, symbol, message, time }, ...prev.slice(0, 49)]);
+  }, []);
+
+  const handleVolumeSpike = useCallback((symbol, mult) => {
+    const key = `vol-${symbol}-${Math.floor(Date.now() / 60000)}`;
+    if (notifiedRef.current.has(key)) return;
+    notifiedRef.current.add(key);
+    notifyVolumeSpike(symbol, mult);
+    addAlert("volume", symbol, `Volume Spike x${mult.toFixed(1)} detectat pe favorit! Early Entry posibil.`);
+  }, [notifyVolumeSpike, addAlert]);
+
+  useVolumeMonitor(favorites, handleVolumeSpike);
+
   const [settings, setSettings] = useState(() => {
     try {
       const saved = localStorage.getItem("soso_scanner_settings");
