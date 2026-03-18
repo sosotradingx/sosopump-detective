@@ -4,8 +4,6 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowUpRight, ArrowDownRight, Eye, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-...
-
 export default function ScannerRow({ pair, onSelect, isFavorite, onToggleFavorite }) {
   const a = pair.analysis || {};
   const sc = statusConfig[a.pumpStatus] || statusConfig.INACTIVE;
