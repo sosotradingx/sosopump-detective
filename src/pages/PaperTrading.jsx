@@ -113,6 +113,18 @@ export default function PaperTrading() {
 
     const log = (msg) => setBotLog(prev => [`[${new Date().toLocaleTimeString("ro-RO")}] ${msg}`, ...prev.slice(0, 29)]);
 
+    // --- Fetch prices for open trades that may not be in priceMap (e.g. outside top N) ---
+    const missingSymbols = openTrades.filter(t => !priceMap[t.symbol]).map(t => t.symbol);
+    if (missingSymbols.length > 0) {
+      // Fetch ticker prices in batches from FAPI or spot
+      const fapiBase = isPerpetual ? "https://fapi.binance.com/fapi/v1" : "https://api.binance.com/api/v3";
+      await Promise.all(missingSymbols.map(async (sym) => {
+        const r = await fetch(`${fapiBase}/ticker/price?symbol=${sym}`);
+        const d = await r.json();
+        if (d.price) priceMap[sym] = parseFloat(d.price);
+      }));
+    }
+
     // --- Check open trades for exit conditions ---
     for (const trade of openTrades) {
       const cur = priceMap[trade.symbol] || trade.entry_price;
