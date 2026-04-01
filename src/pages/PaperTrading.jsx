@@ -175,6 +175,9 @@ export default function PaperTrading() {
       .slice(0, Math.min(cfg.scanPairs ?? 100, pairs.length));
 
     let opened = 0;
+    let scanned = 0;
+    let topScore = 0;
+    let topSymbol = "";
     const BATCH = 25;
     outer: for (let bi = 0; bi < candidates.length; bi += BATCH) {
       const chunk = candidates.slice(bi, bi + BATCH);
@@ -195,6 +198,12 @@ export default function PaperTrading() {
         volume_multiplier: cfg.volumeMultiplier ?? 2.5,
         noise_filter: cfg.noiseFilter ?? true,
       });
+
+      scanned++;
+      if (analysis.totalScore > topScore) {
+        topScore = analysis.totalScore;
+        topSymbol = pair.symbol;
+      }
 
       if (analysis.totalScore >= cfg.minScore) {
         const price = priceMap[pair.symbol] || pair.price;
@@ -223,7 +232,9 @@ export default function PaperTrading() {
       if (bi + BATCH < candidates.length) await new Promise(r => setTimeout(r, 300));
     }
 
-    if (opened === 0) log("🔍 Scan complet, niciun semnal nou găsit.");
+    if (opened === 0) {
+      log(`🔍 Scan complet (${scanned}/${candidates.length} analizate) · Scor minim: ${cfg.minScore} · Top scor găsit: ${topScore}${topSymbol ? ` pe ${topSymbol}` : ""} · ${topScore < cfg.minScore ? `Încearcă scor minim ≤ ${topScore}` : "Semnal dispărut"}`);
+    }
     queryClient.invalidateQueries({ queryKey: ["paper-trades"] });
     botRunningRef.current = false;
     setBotRunning(false);
