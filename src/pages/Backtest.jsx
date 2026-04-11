@@ -51,7 +51,7 @@ function runBacktest(klines, cfg) {
 
   for (let i = warmup; i < totalBars; i++) {
     const slice = klines.slice(0, i + 1);
-    const bar = klines[i];
+    const bar = { ...klines[i] };
 
     // Check exit first if in trade
     if (openTrade) {
@@ -73,6 +73,7 @@ function runBacktest(klines, cfg) {
         trades.push({
           ...openTrade,
           exitBar: i,
+          exitTime: bar.time,
           exitPrice,
           exitReason,
           pnlPct: Math.round(pnlPct * 100) / 100,
@@ -102,6 +103,7 @@ function runBacktest(klines, cfg) {
       const pf = price < 0.001 ? 1e10 : price < 0.01 ? 1e8 : price < 1 ? 1e6 : 1e4;
       openTrade = {
         entryBar: i,
+        entryTime: bar.time,
         entryPrice: price,
         stopLoss: Math.round(price * (1 - cfg.stopLossPct / 100) * pf) / pf,
         takeProfit: Math.round(price * (1 + cfg.takeProfitPct / 100) * pf) / pf,
@@ -118,6 +120,7 @@ function runBacktest(klines, cfg) {
     trades.push({
       ...openTrade,
       exitBar: totalBars - 1,
+      exitTime: lastBar.time,
       exitPrice: lastBar.close,
       exitReason: "timeout",
       pnlPct: Math.round(pnlPct * 100) / 100,
@@ -178,12 +181,13 @@ export default function Backtest() {
     }
 
     // Build equity curve
-    const sortedTrades = allTrades.sort((a, b) => a.entryBar - b.entryBar);
+    const sortedTrades = allTrades.sort((a, b) => (a.entryTime || 0) - (b.entryTime || 0));
     let equity = 1000;
-    const equityCurve = [{ x: 0, equity }];
-    sortedTrades.forEach((t, i) => {
+    const fmtDate = (ts) => ts ? new Date(ts).toLocaleDateString("ro-RO", { day: "2-digit", month: "2-digit" }) : "";
+    const equityCurve = [{ date: "", equity }];
+    sortedTrades.forEach((t) => {
       equity *= 1 + t.pnlPct / 100;
-      equityCurve.push({ x: i + 1, equity: Math.round(equity * 100) / 100 });
+      equityCurve.push({ date: fmtDate(t.exitTime), equity: Math.round(equity * 100) / 100 });
     });
 
     const totalTrades = allTrades.length;
@@ -398,7 +402,7 @@ export default function Backtest() {
                 <h3 className="text-sm font-semibold mb-3">📈 Curba de Echitate</h3>
                 <ResponsiveContainer width="100%" height={200}>
                   <LineChart data={results.equityCurve}>
-                    <XAxis dataKey="x" tick={{ fontSize: 10 }} />
+                    <XAxis dataKey="date" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
                     <YAxis tick={{ fontSize: 10 }} width={60} />
                     <Tooltip formatter={(v) => [`$${v}`, "Echitate"]} />
                     <ReferenceLine y={1000} stroke="#666" strokeDasharray="3 3" />
@@ -457,8 +461,10 @@ export default function Backtest() {
                       <tr className="text-muted-foreground border-b border-border">
                         <th className="text-left p-2">Pereche</th>
                         <th className="text-center p-2">Score</th>
-                        <th className="text-right p-2">Intrare</th>
-                        <th className="text-right p-2">Ieșire</th>
+                        <th className="text-left p-2">Dată Intrare</th>
+                        <th className="text-left p-2">Dată Ieșire</th>
+                        <th className="text-right p-2">Intrare $</th>
+                        <th className="text-right p-2">Ieșire $</th>
                         <th className="text-center p-2">Motiv</th>
                         <th className="text-right p-2">P&L</th>
                         <th className="text-center p-2">Bare</th>
@@ -473,6 +479,8 @@ export default function Backtest() {
                               {t.score}
                             </span>
                           </td>
+                          <td className="p-2 text-left font-mono text-muted-foreground">{t.entryTime ? new Date(t.entryTime).toLocaleDateString("ro-RO", { day:"2-digit", month:"2-digit", year:"2-digit" }) : "—"}</td>
+                          <td className="p-2 text-left font-mono text-muted-foreground">{t.exitTime ? new Date(t.exitTime).toLocaleDateString("ro-RO", { day:"2-digit", month:"2-digit", year:"2-digit" }) : "—"}</td>
                           <td className="p-2 text-right font-mono">${formatPrice(t.entryPrice)}</td>
                           <td className="p-2 text-right font-mono">${formatPrice(t.exitPrice)}</td>
                           <td className="p-2 text-center">
