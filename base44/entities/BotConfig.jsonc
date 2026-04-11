@@ -1,0 +1,105 @@
+{
+  "name": "BotConfig",
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "default": false
+    },
+    "minScore": {
+      "type": "number",
+      "default": 60
+    },
+    "tradeSize": {
+      "type": "number",
+      "default": 200
+    },
+    "maxOpenTrades": {
+      "type": "number",
+      "default": 5
+    },
+    "stopLossPct": {
+      "type": "number",
+      "default": 5
+    },
+    "takeProfitPct": {
+      "type": "number",
+      "default": 30
+    },
+    "timeframe": {
+      "type": "string",
+      "default": "1h"
+    },
+    "marketSource": {
+      "type": "string",
+      "default": "perpetuals"
+    },
+    "scanPairs": {
+      "type": "number",
+      "default": 100
+    },
+    "autoTP": {
+      "type": "boolean",
+      "default": true
+    },
+    "autoSL": {
+      "type": "boolean",
+      "default": true
+    },
+    "autoExitLowScore": {
+      "type": "boolean",
+      "default": true
+    },
+    "cooldownMinutes": {
+      "type": "number",
+      "default": 60
+    },
+    "useMacd": {
+      "type": "boolean",
+      "default": true
+    },
+    "useBbSqueeze": {
+      "type": "boolean",
+      "default": true
+    },
+    "useAdx": {
+      "type": "boolean",
+      "default": true
+    },
+    "useObv": {
+      "type": "boolean",
+      "default": true
+    },
+    "useVolAccum": {
+      "type": "boolean",
+      "default": true
+    },
+    "useTrendFilter": {
+      "type": "boolean",
+      "default": true
+    },
+    "noiseFilter": {
+      "type": "boolean",
+      "default": true
+    },
+    "adxThreshold": {
+      "type": "number",
+      "default": 20
+    },
+    "exhaustionRsi": {
+      "type": "number",
+      "default": 75
+    },
+    "volumeMultiplier": {
+      "type": "number",
+      "default": 2.5
+    },
+    "lastRunAt": {
+      "type": "string"
+    },
+    "lastRunLog": {
+      "type": "string"
+    }
+  },
+  "required": []
+}
