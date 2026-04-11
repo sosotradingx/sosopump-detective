@@ -5,6 +5,7 @@ import { pagesConfig } from './pages.config'
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import MultiChart from './pages/MultiChart';
+import Backtest from './pages/Backtest';
 import TradingDashboard from './pages/TradingDashboard';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
@@ -61,6 +62,7 @@ const AuthenticatedApp = () => {
       ))}
       <Route path="/MultiChart" element={<LayoutWrapper currentPageName="MultiChart"><MultiChart /></LayoutWrapper>} />
       <Route path="/TradingDashboard" element={<LayoutWrapper currentPageName="TradingDashboard"><TradingDashboard /></LayoutWrapper>} />
+      <Route path="/Backtest" element={<LayoutWrapper currentPageName="Backtest"><Backtest /></LayoutWrapper>} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );
