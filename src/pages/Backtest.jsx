@@ -193,8 +193,9 @@ export default function Backtest() {
     const totalTrades = allTrades.length;
     const wins = allTrades.filter(t => t.pnlPct > 0).length;
     const losses = allTrades.filter(t => t.pnlPct < 0).length;
-    const totalPnl = allTrades.reduce((s, t) => s + t.pnlPct, 0);
-    const avgPnl = totalTrades > 0 ? totalPnl / totalTrades : 0;
+    const avgPnl = totalTrades > 0 ? allTrades.reduce((s, t) => s + t.pnlPct, 0) / totalTrades : 0;
+    // Real portfolio return based on compounded equity curve
+    const totalPnl = ((equity - 1000) / 1000) * 100;
     const maxWin = totalTrades > 0 ? Math.max(...allTrades.map(t => t.pnlPct)) : 0;
     const maxLoss = totalTrades > 0 ? Math.min(...allTrades.map(t => t.pnlPct)) : 0;
     const profitFactor = losses > 0
