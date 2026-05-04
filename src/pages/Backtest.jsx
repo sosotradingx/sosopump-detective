@@ -79,7 +79,8 @@ function runBacktest(klines, cfg) {
             exitTime: bar.time,
             exitPrice: tp1Price,
             exitReason: "partial_tp",
-            pnlPct: Math.round(partialPct * soldWeight * 100) / 100,
+            pnlPct: Math.round(partialPct * 100) / 100,        // P&L real al prețului
+            pnlPctWeighted: Math.round(partialPct * soldWeight * 100) / 100, // pentru equity
             barsHeld: i - openTrade.entryBar,
             isPartial: true,
             partialWeight: soldWeight,
@@ -113,7 +114,8 @@ function runBacktest(klines, cfg) {
           exitTime: bar.time,
           exitPrice,
           exitReason,
-          pnlPct: Math.round(rawPnlPct * weight * 100) / 100,
+          pnlPct: Math.round(rawPnlPct * 100) / 100,          // P&L real afișat
+          pnlPctWeighted: Math.round(rawPnlPct * weight * 100) / 100, // pentru equity
           barsHeld: i - openTrade.entryBar,
         });
         openTrade = null;
@@ -223,21 +225,23 @@ export default function Backtest() {
     const fmtDate = (ts) => ts ? new Date(ts).toLocaleDateString("ro-RO", { day: "2-digit", month: "2-digit" }) : "";
     const equityCurve = [{ date: "", equity }];
     sortedTrades.forEach((t) => {
-      equity *= 1 + t.pnlPct / 100;
+      const effectivePnl = t.pnlPctWeighted ?? t.pnlPct;
+      equity *= 1 + effectivePnl / 100;
       equityCurve.push({ date: fmtDate(t.exitTime), equity: Math.round(equity * 100) / 100 });
     });
 
     const totalTrades = allTrades.length;
-    const wins = allTrades.filter(t => t.pnlPct > 0).length;
-    const losses = allTrades.filter(t => t.pnlPct < 0).length;
-    const avgPnl = totalTrades > 0 ? allTrades.reduce((s, t) => s + t.pnlPct, 0) / totalTrades : 0;
+    const eff = t => t.pnlPctWeighted ?? t.pnlPct;
+    const wins = allTrades.filter(t => eff(t) > 0).length;
+    const losses = allTrades.filter(t => eff(t) < 0).length;
+    const avgPnl = totalTrades > 0 ? allTrades.reduce((s, t) => s + eff(t), 0) / totalTrades : 0;
     // Real portfolio return based on compounded equity curve
     const totalPnl = ((equity - 1000) / 1000) * 100;
-    const maxWin = totalTrades > 0 ? Math.max(...allTrades.map(t => t.pnlPct)) : 0;
-    const maxLoss = totalTrades > 0 ? Math.min(...allTrades.map(t => t.pnlPct)) : 0;
+    const maxWin = totalTrades > 0 ? Math.max(...allTrades.map(t => eff(t))) : 0;
+    const maxLoss = totalTrades > 0 ? Math.min(...allTrades.map(t => eff(t))) : 0;
     const profitFactor = losses > 0
-      ? Math.abs(allTrades.filter(t => t.pnlPct > 0).reduce((s, t) => s + t.pnlPct, 0) /
-          allTrades.filter(t => t.pnlPct <= 0).reduce((s, t) => s + t.pnlPct, 0))
+      ? Math.abs(allTrades.filter(t => eff(t) > 0).reduce((s, t) => s + eff(t), 0) /
+          allTrades.filter(t => eff(t) <= 0).reduce((s, t) => s + eff(t), 0))
       : Infinity;
 
     setResults({
