@@ -1,0 +1,77 @@
+{
+  "name": "PaperTrade",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Trading pair symbol"
+    },
+    "side": {
+      "type": "string",
+      "enum": [
+        "BUY",
+        "SELL"
+      ],
+      "default": "BUY"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "closed"
+      ],
+      "default": "open"
+    },
+    "entry_price": {
+      "type": "number"
+    },
+    "exit_price": {
+      "type": "number"
+    },
+    "quantity": {
+      "type": "number"
+    },
+    "pump_score_at_entry": {
+      "type": "number"
+    },
+    "stop_loss": {
+      "type": "number"
+    },
+    "take_profit": {
+      "type": "number"
+    },
+    "partial_tp_hit": {
+      "type": "boolean",
+      "default": false,
+      "description": "True dac\u0103 partial take-profit a fost deja executat"
+    },
+    "pnl_percent": {
+      "type": "number"
+    },
+    "pnl_usd": {
+      "type": "number"
+    },
+    "exit_reason": {
+      "type": "string",
+      "enum": [
+        "take_profit",
+        "stop_loss",
+        "manual",
+        "adx_exhaustion",
+        "volume_fade",
+        "rsi_divergence",
+        "timeout",
+        "partial_tp",
+        ""
+      ]
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "symbol",
+    "entry_price",
+    "quantity"
+  ]
+}

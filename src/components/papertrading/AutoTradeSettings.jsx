@@ -130,6 +130,56 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
             <ToggleRow label="Închide la Take Profit" configKey="autoTP" />
             <ToggleRow label="Închide la Stop Loss" configKey="autoSL" />
             <ToggleRow label="Exit la Scor < 20" configKey="autoExitLowScore" description="Închide dacă semnalul dispare" />
+          </section>
+
+          {/* Partial Take Profit */}
+          <section className="space-y-3">
+            <h3 className="text-xs font-mono uppercase text-muted-foreground border-b border-border pb-1">🎯 Partial Take-Profit (TP1)</h3>
+
+            <ToggleRow
+              label="Activează Partial TP"
+              configKey="usePartialTP"
+              description="Închide o parte din poziție la primul obiectiv"
+            />
+
+            {config.usePartialTP && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1 block">
+                      Target TP1 (%)
+                    </Label>
+                    <Input
+                      type="number" min="1" max="100" step="1"
+                      value={config.partialTPTarget ?? 10}
+                      onChange={e => set("partialTPTarget", Number(e.target.value))}
+                      className="bg-secondary"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Preț la care se execută TP1</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1 block">
+                      % Cantitate Vândută
+                    </Label>
+                    <Input
+                      type="number" min="10" max="90" step="5"
+                      value={config.partialTPPercent ?? 50}
+                      onChange={e => set("partialTPPercent", Number(e.target.value))}
+                      className="bg-secondary"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">% din poziție închis la TP1</p>
+                  </div>
+                </div>
+                <ToggleRow
+                  label="Mută SL la Breakeven după TP1"
+                  configKey="moveSlToBreakeven"
+                  description="SL devine prețul de intrare după TP1"
+                />
+                <div className="bg-primary/5 border border-primary/20 rounded-lg p-2 text-xs text-muted-foreground">
+                  Ex: Intrare $100 → TP1 la +{config.partialTPTarget ?? 10}% ($1{config.partialTPTarget ?? 10}) → închizi {config.partialTPPercent ?? 50}% → restul continuă spre TP2{config.moveSlToBreakeven ? " cu SL la $100" : ""}.
+                </div>
+              </>
+            )}
 
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">

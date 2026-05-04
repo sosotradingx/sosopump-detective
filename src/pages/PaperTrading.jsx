@@ -26,6 +26,10 @@ const DEFAULT_AUTO_CONFIG = {
   cooldownMinutes: 60,
   marketSource: "perpetuals",
   scanPairs: 100,
+  usePartialTP: false,
+  partialTPTarget: 10,
+  partialTPPercent: 50,
+  moveSlToBreakeven: true,
 };
 
 function loadAutoConfig() {
@@ -130,6 +134,47 @@ export default function PaperTrading() {
       const cur = priceMap[trade.symbol] || trade.entry_price;
       const pnlPct = ((cur - trade.entry_price) / trade.entry_price) * 100;
       let reason = null;
+
+      // --- Partial Take-Profit (TP1) ---
+      if (cfg.usePartialTP && !trade.partial_tp_hit) {
+        const tp1Price = trade.entry_price * (1 + (cfg.partialTPTarget ?? 10) / 100);
+        if (cur >= tp1Price && trade.quantity > 0) {
+          const partialQty = Math.round(trade.quantity * ((cfg.partialTPPercent ?? 50) / 100) * 10000) / 10000;
+          const remainQty = Math.round((trade.quantity - partialQty) * 10000) / 10000;
+          const partialPnlUsd = (cur - trade.entry_price) * partialQty;
+          const partialPnlPct = pnlPct;
+
+          // Close partial trade record
+          await base44.entities.PaperTrade.create({
+            symbol: trade.symbol,
+            side: "BUY",
+            status: "closed",
+            entry_price: trade.entry_price,
+            exit_price: cur,
+            quantity: partialQty,
+            pump_score_at_entry: trade.pump_score_at_entry,
+            stop_loss: trade.stop_loss,
+            take_profit: trade.take_profit,
+            partial_tp_hit: false,
+            pnl_percent: Math.round(partialPnlPct * 100) / 100,
+            pnl_usd: Math.round(partialPnlUsd * 100) / 100,
+            exit_reason: "partial_tp",
+            notes: `Partial TP1 (${cfg.partialTPPercent ?? 50}%) | ${trade.notes || ""}`,
+          });
+
+          // Update remaining position
+          const newSL = cfg.moveSlToBreakeven ? trade.entry_price : trade.stop_loss;
+          await base44.entities.PaperTrade.update(trade.id, {
+            quantity: remainQty,
+            partial_tp_hit: true,
+            stop_loss: newSL,
+            notes: `${trade.notes || ""} | TP1 executat la ${cur.toFixed(4)}`,
+          });
+
+          log(`🎯 PARTIAL TP ${trade.symbol} | Vândut ${cfg.partialTPPercent ?? 50}% la +${partialPnlPct.toFixed(2)}% | Rămâne: ${remainQty}${cfg.moveSlToBreakeven ? " | SL→Breakeven" : ""}`);
+          continue; // skip full-close check this cycle
+        }
+      }
 
       if (cfg.autoTP && trade.take_profit > 0 && cur >= trade.take_profit) reason = "take_profit";
       else if (cfg.autoSL && trade.stop_loss > 0 && cur <= trade.stop_loss) reason = "stop_loss";
@@ -483,6 +528,9 @@ export default function PaperTrading() {
                         <span className="text-chart-red">${formatPrice(trade.stop_loss)}</span>
                         {" / "}
                         <span className="text-chart-green">${formatPrice(trade.take_profit)}</span>
+                        {trade.partial_tp_hit && (
+                          <div className="text-[9px] text-chart-gold font-mono mt-0.5">🎯 TP1 done</div>
+                        )}
                       </td>
                       <td className="p-3 text-center">
                         {isAuto
