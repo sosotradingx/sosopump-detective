@@ -4,8 +4,13 @@ const FAPI_URL = "https://fapi.binance.com/fapi/v1";
 
 // --- Fetch all active USDT perpetual futures pairs ---
 export async function fetchPerpetualPairs(limit = 100, minVolume = 500000) {
-  const res = await fetch(`${FAPI_URL}/ticker/24hr`);
-  const data = await res.json();
+  let data;
+  try {
+    const res = await fetch(`${FAPI_URL}/ticker/24hr`);
+    data = await res.json();
+  } catch {
+    return [];
+  }
 
   if (!Array.isArray(data)) return [];
 
@@ -32,9 +37,15 @@ export async function fetchPerpetualPairs(limit = 100, minVolume = 500000) {
 
 // Legacy spot pairs (kept for compatibility)
 export async function fetchTopPairs(quoteAsset = "USDT", limit = 50, minVolume = 1000000) {
-  const res = await fetch(`${BASE_URL}/ticker/24hr`);
-  const data = await res.json();
-  
+  let data;
+  try {
+    const res = await fetch(`${BASE_URL}/ticker/24hr`);
+    data = await res.json();
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(data)) return [];
+
   return data
     .filter(t => t.symbol.endsWith(quoteAsset) && parseFloat(t.quoteVolume) >= minVolume)
     .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
@@ -56,9 +67,13 @@ export async function fetchTopPairs(quoteAsset = "USDT", limit = 50, minVolume =
 // Fetch klines - supports both spot and futures
 export async function fetchKlines(symbol, interval = "1h", limit = 100, isPerpetual = false) {
   const base = isPerpetual ? FAPI_URL : BASE_URL;
-  const res = await fetch(`${base}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
-  const data = await res.json();
-  
+  let data;
+  try {
+    const res = await fetch(`${base}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+    data = await res.json();
+  } catch {
+    return [];
+  }
   if (!Array.isArray(data)) return [];
 
   return data.map(k => ({
@@ -101,8 +116,12 @@ export async function fetchMultiTFKlines(symbol, timeframes = ["15m", "1h", "4h"
 }
 
 export async function fetchOrderBook(symbol, limit = 20) {
-  const res = await fetch(`${BASE_URL}/depth?symbol=${symbol}&limit=${limit}`);
-  return await res.json();
+  try {
+    const res = await fetch(`${BASE_URL}/depth?symbol=${symbol}&limit=${limit}`);
+    return await res.json();
+  } catch {
+    return { bids: [], asks: [] };
+  }
 }
 
 export function formatVolume(vol) {
