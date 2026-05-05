@@ -7,6 +7,8 @@ export async function fetchPerpetualPairs(limit = 100, minVolume = 500000) {
   const res = await fetch(`${FAPI_URL}/ticker/24hr`);
   const data = await res.json();
 
+  if (!Array.isArray(data)) return [];
+
   const filtered = data
     .filter(t => t.symbol.endsWith("USDT") && parseFloat(t.quoteVolume) >= minVolume)
     .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume));
