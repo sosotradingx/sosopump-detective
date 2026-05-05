@@ -57,6 +57,8 @@ export async function fetchKlines(symbol, interval = "1h", limit = 100, isPerpet
   const res = await fetch(`${base}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
   const data = await res.json();
   
+  if (!Array.isArray(data)) return [];
+
   return data.map(k => ({
     time: k[0],
     open: parseFloat(k[1]),
