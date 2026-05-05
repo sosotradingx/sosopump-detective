@@ -548,35 +548,88 @@ export default function Backtest() {
                         <th className="text-left p-2">Dată Ieșire</th>
                         <th className="text-right p-2">Intrare $</th>
                         <th className="text-right p-2">Ieșire $</th>
-                        <th className="text-center p-2">Motiv</th>
+                        <th className="text-center p-2">Exit</th>
                         <th className="text-right p-2">P&L</th>
                         <th className="text-center p-2">Bare</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {results.allTrades.map((t, i) => (
-                        <tr key={i} className="border-b border-border/30 hover:bg-accent/10">
-                          <td className="p-2 font-mono">{t.symbol}</td>
-                          <td className="p-2 text-center">
-                            <span className={`px-1 rounded text-[10px] font-bold ${t.score >= 70 ? "text-pump-strong" : t.score >= 50 ? "text-pump-active" : "text-muted-foreground"}`}>
-                              {t.score}
-                            </span>
-                          </td>
-                          <td className="p-2 text-left font-mono text-muted-foreground">{t.entryTime ? new Date(t.entryTime).toLocaleDateString("ro-RO", { day:"2-digit", month:"2-digit", year:"2-digit" }) : "—"}</td>
-                          <td className="p-2 text-left font-mono text-muted-foreground">{t.exitTime ? new Date(t.exitTime).toLocaleDateString("ro-RO", { day:"2-digit", month:"2-digit", year:"2-digit" }) : "—"}</td>
-                          <td className="p-2 text-right font-mono">${formatPrice(t.entryPrice)}</td>
-                          <td className="p-2 text-right font-mono">${formatPrice(t.exitPrice)}</td>
-                          <td className="p-2 text-center">
-                            <Badge variant="outline" className="text-[9px] px-1">
-                              {t.exitReason === "take_profit" ? "✅ TP" : t.exitReason === "stop_loss" ? "❌ SL" : t.exitReason === "partial_tp" ? "🎯 TP1" : "⏱ TO"}
-                            </Badge>
-                          </td>
-                          <td className={`p-2 text-right font-mono font-bold ${t.pnlPct >= 0 ? "text-chart-green" : "text-chart-red"}`}>
-                            {t.pnlPct >= 0 ? "+" : ""}{t.pnlPct}%
-                          </td>
-                          <td className="p-2 text-center text-muted-foreground">{t.barsHeld}</td>
-                        </tr>
-                      ))}
+                      {(() => {
+                        // Group partial_tp + its remainder into one logical trade row
+                        const rows = [];
+                        const trades = results.allTrades;
+                        let skip = new Set();
+                        for (let i = 0; i < trades.length; i++) {
+                          if (skip.has(i)) continue;
+                          const t = trades[i];
+                          if (t.exitReason === "partial_tp") {
+                            // Find the matching remainder: same symbol + same entryTime + next non-partial entry
+                            const remainder = trades.slice(i + 1).find(
+                              r => r.symbol === t.symbol && r.entryTime === t.entryTime && r.exitReason !== "partial_tp"
+                            );
+                            if (remainder) {
+                              const remIdx = trades.indexOf(remainder);
+                              skip.add(remIdx);
+                              // Combined P&L = TP1 pct weighted + remainder pct weighted
+                              const tp1Weight = t.partialWeight ?? 0.5;
+                              const tp2Weight = remainder.remainWeight ?? (1 - tp1Weight);
+                              const combinedPnl = Math.round((t.pnlPct * tp1Weight + remainder.pnlPct * tp2Weight) * 100) / 100;
+                              rows.push(
+                                <tr key={i} className="border-b border-border/30 hover:bg-accent/10">
+                                  <td className="p-2 font-mono">{t.symbol}</td>
+                                  <td className="p-2 text-center">
+                                    <span className={`px-1 rounded text-[10px] font-bold ${t.score >= 70 ? "text-pump-strong" : t.score >= 50 ? "text-pump-active" : "text-muted-foreground"}`}>{t.score}</span>
+                                  </td>
+                                  <td className="p-2 text-left font-mono text-muted-foreground">{t.entryTime ? new Date(t.entryTime).toLocaleDateString("ro-RO", { day:"2-digit", month:"2-digit", year:"2-digit" }) : "—"}</td>
+                                  <td className="p-2 text-left font-mono text-muted-foreground">{remainder.exitTime ? new Date(remainder.exitTime).toLocaleDateString("ro-RO", { day:"2-digit", month:"2-digit", year:"2-digit" }) : "—"}</td>
+                                  <td className="p-2 text-right font-mono">${formatPrice(t.entryPrice)}</td>
+                                  <td className="p-2 text-right font-mono text-[10px]">
+                                    <span className="text-muted-foreground">TP1: ${formatPrice(t.exitPrice)}</span><br/>
+                                    <span>{remainder.exitReason === "take_profit" ? "TP2" : remainder.exitReason === "stop_loss" ? "SL" : "TO"}: ${formatPrice(remainder.exitPrice)}</span>
+                                  </td>
+                                  <td className="p-2 text-center">
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      <Badge variant="outline" className="text-[9px] px-1">🎯 TP1</Badge>
+                                      <Badge variant="outline" className="text-[9px] px-1">
+                                        {remainder.exitReason === "take_profit" ? "✅ TP2" : remainder.exitReason === "stop_loss" ? "❌ SL" : "⏱ TO"}
+                                      </Badge>
+                                    </div>
+                                  </td>
+                                  <td className={`p-2 text-right font-mono font-bold ${combinedPnl >= 0 ? "text-chart-green" : "text-chart-red"}`}>
+                                    {combinedPnl >= 0 ? "+" : ""}{combinedPnl}%
+                                    <div className="text-[9px] text-muted-foreground font-normal">TP1: +{t.pnlPct}%</div>
+                                  </td>
+                                  <td className="p-2 text-center text-muted-foreground">{remainder.barsHeld}</td>
+                                </tr>
+                              );
+                              continue;
+                            }
+                          }
+                          // Normal single trade row
+                          rows.push(
+                            <tr key={i} className="border-b border-border/30 hover:bg-accent/10">
+                              <td className="p-2 font-mono">{t.symbol}</td>
+                              <td className="p-2 text-center">
+                                <span className={`px-1 rounded text-[10px] font-bold ${t.score >= 70 ? "text-pump-strong" : t.score >= 50 ? "text-pump-active" : "text-muted-foreground"}`}>{t.score}</span>
+                              </td>
+                              <td className="p-2 text-left font-mono text-muted-foreground">{t.entryTime ? new Date(t.entryTime).toLocaleDateString("ro-RO", { day:"2-digit", month:"2-digit", year:"2-digit" }) : "—"}</td>
+                              <td className="p-2 text-left font-mono text-muted-foreground">{t.exitTime ? new Date(t.exitTime).toLocaleDateString("ro-RO", { day:"2-digit", month:"2-digit", year:"2-digit" }) : "—"}</td>
+                              <td className="p-2 text-right font-mono">${formatPrice(t.entryPrice)}</td>
+                              <td className="p-2 text-right font-mono">${formatPrice(t.exitPrice)}</td>
+                              <td className="p-2 text-center">
+                                <Badge variant="outline" className="text-[9px] px-1">
+                                  {t.exitReason === "take_profit" ? "✅ TP" : t.exitReason === "stop_loss" ? "❌ SL" : t.exitReason === "partial_tp" ? "🎯 TP1" : "⏱ TO"}
+                                </Badge>
+                              </td>
+                              <td className={`p-2 text-right font-mono font-bold ${t.pnlPct >= 0 ? "text-chart-green" : "text-chart-red"}`}>
+                                {t.pnlPct >= 0 ? "+" : ""}{t.pnlPct}%
+                              </td>
+                              <td className="p-2 text-center text-muted-foreground">{t.barsHeld}</td>
+                            </tr>
+                          );
+                        }
+                        return rows;
+                      })()}
                     </tbody>
                   </table>
                 </div>
