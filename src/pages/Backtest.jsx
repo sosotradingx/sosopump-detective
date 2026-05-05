@@ -64,10 +64,12 @@ function runBacktest(klines, cfg) {
       let exitPrice = null;
       let exitReason = null;
 
-      // --- Partial TP1 check ---
+      // --- Partial TP1 check (only if TP1 < TP2) ---
       if (cfg.usePartialTP && !openTrade.partialTPHit) {
         const tp1Price = openTrade.entryPrice * (1 + (cfg.partialTPTarget ?? 10) / 100);
-        if (high >= tp1Price) {
+        const tp2Price = openTrade.takeProfit;
+        // TP1 must be strictly below TP2 to make sense
+        if (tp1Price < tp2Price && high >= tp1Price) {
           const partialPct = ((tp1Price - openTrade.entryPrice) / openTrade.entryPrice) * 100;
           const remainWeight = (100 - (cfg.partialTPPercent ?? 50)) / 100;
           const soldWeight = (cfg.partialTPPercent ?? 50) / 100;
@@ -79,21 +81,21 @@ function runBacktest(klines, cfg) {
             exitTime: bar.time,
             exitPrice: tp1Price,
             exitReason: "partial_tp",
-            pnlPct: Math.round(partialPct * 100) / 100,        // P&L real al prețului
-            pnlPctWeighted: Math.round(partialPct * soldWeight * 100) / 100, // pentru equity
+            pnlPct: Math.round(partialPct * 100) / 100,
+            pnlPctWeighted: Math.round(partialPct * soldWeight * 100) / 100,
             barsHeld: i - openTrade.entryBar,
             isPartial: true,
             partialWeight: soldWeight,
           });
 
-          // Update remaining trade
+          // Update remaining trade — move SL to breakeven optionally
           openTrade = {
             ...openTrade,
             partialTPHit: true,
             stopLoss: cfg.moveSlToBreakeven ? openTrade.entryPrice : openTrade.stopLoss,
             remainWeight,
           };
-          continue;
+          continue; // skip TP2 check on same bar
         }
       }
 
@@ -334,7 +336,9 @@ export default function Backtest() {
                   onChange={e => set("stopLossPct", Number(e.target.value))} className="bg-secondary mt-1" />
               </div>
               <div>
-                <Label className="text-xs text-muted-foreground">Take Profit %</Label>
+                <Label className="text-xs text-muted-foreground">
+                  {cfg.usePartialTP ? "TP2 — Exit Final %" : "Take Profit %"}
+                </Label>
                 <Input type="number" min="1" max="200" step="1" value={cfg.takeProfitPct}
                   onChange={e => set("takeProfitPct", Number(e.target.value))} className="bg-secondary mt-1" />
               </div>
@@ -375,9 +379,15 @@ export default function Backtest() {
                   <Label className="text-xs">Mută SL la Breakeven după TP1</Label>
                   <Switch checked={cfg.moveSlToBreakeven ?? true} onCheckedChange={v => set("moveSlToBreakeven", v)} />
                 </div>
-                <p className="text-xs text-muted-foreground bg-primary/5 border border-primary/20 rounded p-2">
-                  La TP1 (+{cfg.partialTPTarget}%) se vinde {cfg.partialTPPercent}% din poziție. Restul de {100 - cfg.partialTPPercent}% continuă spre TP2{cfg.moveSlToBreakeven ? " cu SL mutat la breakeven" : ""}.
-                </p>
+                {cfg.partialTPTarget >= cfg.takeProfitPct ? (
+                  <p className="text-xs text-chart-red bg-destructive/10 border border-destructive/30 rounded p-2">
+                    ⚠️ TP1 ({cfg.partialTPTarget}%) trebuie să fie MAI MIC decât TP2 ({cfg.takeProfitPct}%). TP1 va fi ignorat!
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground bg-primary/5 border border-primary/20 rounded p-2">
+                    La TP1 (+{cfg.partialTPTarget}%) se vinde {cfg.partialTPPercent}% din poziție. Restul de {100 - cfg.partialTPPercent}% continuă spre TP2 (+{cfg.takeProfitPct}%){cfg.moveSlToBreakeven ? ", SL mutat la breakeven" : ""}.
+                  </p>
+                )}
               </>
             )}
           </section>
