@@ -222,18 +222,37 @@ export default function Backtest() {
       const trades = runBacktest(klines, cfg);
       if (trades.length === 0) continue;
 
-        // Count partial+remainder pairs as 1 trade
-      const completedTrades = trades.filter(t => t.exitReason !== "partial_tp");
-      const wins = completedTrades.filter(t => t.pnlPct > 0).length;
-      const totalPnl = completedTrades.reduce((s, t) => s + (t.pnlPctWeighted ?? t.pnlPct), 0);
+        // Merge partial_tp + remainder into logical trades for per-symbol stats
+      const symLogical = [];
+      const symUsed = new Set();
+      for (let si = 0; si < trades.length; si++) {
+        if (symUsed.has(si)) continue;
+        const st = trades[si];
+        if (st.exitReason === "partial_tp") {
+          const remSi = trades.findIndex((r, ri) =>
+            ri > si && !symUsed.has(ri) && r.entryTime === st.entryTime && r.exitReason !== "partial_tp"
+          );
+          if (remSi !== -1) {
+            symUsed.add(remSi);
+            const rem = trades[remSi];
+            const w1 = st.partialWeight ?? 0.5;
+            const w2 = rem.remainWeight ?? (1 - w1);
+            symLogical.push({ combinedPnl: st.pnlPct * w1 + rem.pnlPct * w2 });
+            continue;
+          }
+        }
+        symLogical.push({ combinedPnl: st.pnlPctWeighted ?? st.pnlPct });
+      }
+      const symWins = symLogical.filter(t => t.combinedPnl > 0).length;
+      const symTotalPnl = symLogical.reduce((s, t) => s + t.combinedPnl, 0);
       symbolResults.push({
         symbol: pair.symbol,
-        trades: completedTrades.length,
-        wins,
-        losses: completedTrades.length - wins,
-        winRate: Math.round((wins / completedTrades.length) * 100),
-        totalPnl: Math.round(totalPnl * 100) / 100,
-        avgPnl: Math.round((totalPnl / completedTrades.length) * 100) / 100,
+        trades: symLogical.length,
+        wins: symWins,
+        losses: symLogical.length - symWins,
+        winRate: Math.round((symWins / symLogical.length) * 100),
+        totalPnl: Math.round(symTotalPnl * 100) / 100,
+        avgPnl: Math.round((symTotalPnl / symLogical.length) * 100) / 100,
       });
       allTrades.push(...trades.map(t => ({ ...t, symbol: pair.symbol })));
 
@@ -242,30 +261,56 @@ export default function Backtest() {
 
     // Build equity curve — only on completed trades (partial_tp already folded into remainder)
     const sortedTrades = allTrades.sort((a, b) => (a.entryTime || 0) - (b.entryTime || 0));
-    const sortedCompleted = sortedTrades.filter(t => t.exitReason !== "partial_tp");
+
+    // --- Merge partial_tp + remainder into logical trades for stats ---
+    const logicalTrades = [];
+    const usedIdx = new Set();
+    for (let i = 0; i < sortedTrades.length; i++) {
+      if (usedIdx.has(i)) continue;
+      const t = sortedTrades[i];
+      if (t.exitReason === "partial_tp") {
+        // Find matching remainder (same symbol + same entryTime)
+        const remIdx = sortedTrades.findIndex((r, ri) =>
+          ri > i && !usedIdx.has(ri) && r.symbol === t.symbol && r.entryTime === t.entryTime && r.exitReason !== "partial_tp"
+        );
+        if (remIdx !== -1) {
+          usedIdx.add(remIdx);
+          const rem = sortedTrades[remIdx];
+          const tp1Weight = t.partialWeight ?? 0.5;
+          const tp2Weight = rem.remainWeight ?? (1 - tp1Weight);
+          const combinedPnl = t.pnlPct * tp1Weight + rem.pnlPct * tp2Weight;
+          logicalTrades.push({
+            ...rem,
+            combinedPnl: Math.round(combinedPnl * 100) / 100,
+            isPartialCombo: true,
+            tp1ExitPrice: t.exitPrice,
+            tp1PnlPct: t.pnlPct,
+          });
+          continue;
+        }
+      }
+      logicalTrades.push({ ...t, combinedPnl: t.pnlPctWeighted ?? t.pnlPct });
+    }
+
     let equity = 1000;
     const fmtDate = (ts) => ts ? new Date(ts).toLocaleDateString("ro-RO", { day: "2-digit", month: "2-digit" }) : "";
     const equityCurve = [{ date: "", equity }];
-    sortedCompleted.forEach((t) => {
-      const effectivePnl = t.pnlPctWeighted ?? t.pnlPct;
-      equity *= 1 + effectivePnl / 100;
+    logicalTrades.forEach((t) => {
+      equity *= 1 + t.combinedPnl / 100;
       equityCurve.push({ date: fmtDate(t.exitTime), equity: Math.round(equity * 100) / 100 });
     });
 
-    // Only count completed trades (not partial_tp legs) for stats
-    const completedAllTrades = allTrades.filter(t => t.exitReason !== "partial_tp");
-    const totalTrades = completedAllTrades.length;
-    const eff = t => t.pnlPctWeighted ?? t.pnlPct;
-    const wins = completedAllTrades.filter(t => eff(t) > 0).length;
-    const losses = completedAllTrades.filter(t => eff(t) < 0).length;
-    const avgPnl = totalTrades > 0 ? completedAllTrades.reduce((s, t) => s + eff(t), 0) / totalTrades : 0;
+    const totalTrades = logicalTrades.length;
+    const wins = logicalTrades.filter(t => t.combinedPnl > 0).length;
+    const losses = logicalTrades.filter(t => t.combinedPnl < 0).length;
+    const avgPnl = totalTrades > 0 ? logicalTrades.reduce((s, t) => s + t.combinedPnl, 0) / totalTrades : 0;
     // Real portfolio return based on compounded equity curve
     const totalPnl = ((equity - 1000) / 1000) * 100;
-    const maxWin = totalTrades > 0 ? Math.max(...completedAllTrades.map(t => eff(t))) : 0;
-    const maxLoss = totalTrades > 0 ? Math.min(...completedAllTrades.map(t => eff(t))) : 0;
+    const maxWin = totalTrades > 0 ? Math.max(...logicalTrades.map(t => t.combinedPnl)) : 0;
+    const maxLoss = totalTrades > 0 ? Math.min(...logicalTrades.map(t => t.combinedPnl)) : 0;
     const profitFactor = losses > 0
-      ? Math.abs(completedAllTrades.filter(t => eff(t) > 0).reduce((s, t) => s + eff(t), 0) /
-          completedAllTrades.filter(t => eff(t) <= 0).reduce((s, t) => s + eff(t), 0))
+      ? Math.abs(logicalTrades.filter(t => t.combinedPnl > 0).reduce((s, t) => s + t.combinedPnl, 0) /
+          logicalTrades.filter(t => t.combinedPnl <= 0).reduce((s, t) => s + t.combinedPnl, 0))
       : Infinity;
 
     setResults({
@@ -281,7 +326,7 @@ export default function Backtest() {
       finalEquity: Math.round(equity * 100) / 100,
       equityCurve,
       symbolResults: symbolResults.sort((a, b) => b.totalPnl - a.totalPnl),
-      allTrades: sortedTrades.slice(0, 200),
+      allTrades: logicalTrades.slice(0, 200),
     });
 
     setRunning(false);
@@ -576,82 +621,49 @@ export default function Backtest() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(() => {
-                        // Group partial_tp + its remainder into one logical trade row
-                        const rows = [];
-                        const trades = results.allTrades;
-                        let skip = new Set();
-                        for (let i = 0; i < trades.length; i++) {
-                          if (skip.has(i)) continue;
-                          const t = trades[i];
-                          if (t.exitReason === "partial_tp") {
-                            // Find the matching remainder: same symbol + same entryTime + next non-partial entry
-                            const remainder = trades.slice(i + 1).find(
-                              r => r.symbol === t.symbol && r.entryTime === t.entryTime && r.exitReason !== "partial_tp"
-                            );
-                            if (remainder) {
-                              const remIdx = trades.indexOf(remainder);
-                              skip.add(remIdx);
-                              // Combined P&L = TP1 pct weighted + remainder pct weighted
-                              const tp1Weight = t.partialWeight ?? 0.5;
-                              const tp2Weight = remainder.remainWeight ?? (1 - tp1Weight);
-                              const combinedPnl = Math.round((t.pnlPct * tp1Weight + remainder.pnlPct * tp2Weight) * 100) / 100;
-                              rows.push(
-                                <tr key={i} className="border-b border-border/30 hover:bg-accent/10">
-                                  <td className="p-2 font-mono">{t.symbol}</td>
-                                  <td className="p-2 text-center">
-                                    <span className={`px-1 rounded text-[10px] font-bold ${t.score >= 70 ? "text-pump-strong" : t.score >= 50 ? "text-pump-active" : "text-muted-foreground"}`}>{t.score}</span>
-                                  </td>
-                                  <td className="p-2 text-left font-mono text-muted-foreground">{t.entryTime ? new Date(t.entryTime).toLocaleDateString("ro-RO", { day:"2-digit", month:"2-digit", year:"2-digit" }) : "—"}</td>
-                                  <td className="p-2 text-left font-mono text-muted-foreground">{remainder.exitTime ? new Date(remainder.exitTime).toLocaleDateString("ro-RO", { day:"2-digit", month:"2-digit", year:"2-digit" }) : "—"}</td>
-                                  <td className="p-2 text-right font-mono">${formatPrice(t.entryPrice)}</td>
-                                  <td className="p-2 text-right font-mono text-[10px]">
-                                    <span className="text-muted-foreground">TP1: ${formatPrice(t.exitPrice)}</span><br/>
-                                    <span>{remainder.exitReason === "take_profit" ? "TP2" : remainder.exitReason === "stop_loss" ? "SL" : "TO"}: ${formatPrice(remainder.exitPrice)}</span>
-                                  </td>
-                                  <td className="p-2 text-center">
-                                    <div className="flex flex-col items-center gap-0.5">
-                                      <Badge variant="outline" className="text-[9px] px-1">🎯 TP1</Badge>
-                                      <Badge variant="outline" className="text-[9px] px-1">
-                                        {remainder.exitReason === "take_profit" ? "✅ TP2" : remainder.exitReason === "stop_loss" ? "❌ SL" : "⏱ TO"}
-                                      </Badge>
-                                    </div>
-                                  </td>
-                                  <td className={`p-2 text-right font-mono font-bold ${combinedPnl >= 0 ? "text-chart-green" : "text-chart-red"}`}>
-                                    {combinedPnl >= 0 ? "+" : ""}{combinedPnl}%
-                                    <div className="text-[9px] text-muted-foreground font-normal">TP1: +{t.pnlPct}%</div>
-                                  </td>
-                                  <td className="p-2 text-center text-muted-foreground">{remainder.barsHeld}</td>
-                                </tr>
-                              );
-                              continue;
-                            }
-                          }
-                          // Normal single trade row
-                          rows.push(
-                            <tr key={i} className="border-b border-border/30 hover:bg-accent/10">
-                              <td className="p-2 font-mono">{t.symbol}</td>
-                              <td className="p-2 text-center">
-                                <span className={`px-1 rounded text-[10px] font-bold ${t.score >= 70 ? "text-pump-strong" : t.score >= 50 ? "text-pump-active" : "text-muted-foreground"}`}>{t.score}</span>
-                              </td>
-                              <td className="p-2 text-left font-mono text-muted-foreground">{t.entryTime ? new Date(t.entryTime).toLocaleDateString("ro-RO", { day:"2-digit", month:"2-digit", year:"2-digit" }) : "—"}</td>
-                              <td className="p-2 text-left font-mono text-muted-foreground">{t.exitTime ? new Date(t.exitTime).toLocaleDateString("ro-RO", { day:"2-digit", month:"2-digit", year:"2-digit" }) : "—"}</td>
-                              <td className="p-2 text-right font-mono">${formatPrice(t.entryPrice)}</td>
-                              <td className="p-2 text-right font-mono">${formatPrice(t.exitPrice)}</td>
-                              <td className="p-2 text-center">
+                      {results.allTrades.map((t, i) => {
+                        const pnl = Math.round((t.combinedPnl ?? t.pnlPct) * 100) / 100;
+                        return (
+                          <tr key={i} className="border-b border-border/30 hover:bg-accent/10">
+                            <td className="p-2 font-mono">{t.symbol}</td>
+                            <td className="p-2 text-center">
+                              <span className={`px-1 rounded text-[10px] font-bold ${t.score >= 70 ? "text-pump-strong" : t.score >= 50 ? "text-pump-active" : "text-muted-foreground"}`}>{t.score}</span>
+                            </td>
+                            <td className="p-2 text-left font-mono text-muted-foreground">{t.entryTime ? new Date(t.entryTime).toLocaleDateString("ro-RO", { day:"2-digit", month:"2-digit", year:"2-digit" }) : "—"}</td>
+                            <td className="p-2 text-left font-mono text-muted-foreground">{t.exitTime ? new Date(t.exitTime).toLocaleDateString("ro-RO", { day:"2-digit", month:"2-digit", year:"2-digit" }) : "—"}</td>
+                            <td className="p-2 text-right font-mono">${formatPrice(t.entryPrice)}</td>
+                            <td className="p-2 text-right font-mono text-[10px]">
+                              {t.isPartialCombo ? (
+                                <>
+                                  <span className="text-muted-foreground">TP1: ${formatPrice(t.tp1ExitPrice)}</span><br/>
+                                  <span>{t.exitReason === "take_profit" ? "TP2" : t.exitReason === "stop_loss" ? "SL" : "TO"}: ${formatPrice(t.exitPrice)}</span>
+                                </>
+                              ) : (
+                                <span>${formatPrice(t.exitPrice)}</span>
+                              )}
+                            </td>
+                            <td className="p-2 text-center">
+                              {t.isPartialCombo ? (
+                                <div className="flex flex-col items-center gap-0.5">
+                                  <Badge variant="outline" className="text-[9px] px-1">🎯 TP1</Badge>
+                                  <Badge variant="outline" className="text-[9px] px-1">
+                                    {t.exitReason === "take_profit" ? "✅ TP2" : t.exitReason === "stop_loss" ? "❌ SL" : "⏱ TO"}
+                                  </Badge>
+                                </div>
+                              ) : (
                                 <Badge variant="outline" className="text-[9px] px-1">
-                                  {t.exitReason === "take_profit" ? "✅ TP" : t.exitReason === "stop_loss" ? "❌ SL" : t.exitReason === "partial_tp" ? "🎯 TP1" : "⏱ TO"}
+                                  {t.exitReason === "take_profit" ? "✅ TP" : t.exitReason === "stop_loss" ? "❌ SL" : "⏱ TO"}
                                 </Badge>
-                              </td>
-                              <td className={`p-2 text-right font-mono font-bold ${t.pnlPct >= 0 ? "text-chart-green" : "text-chart-red"}`}>
-                                {t.pnlPct >= 0 ? "+" : ""}{t.pnlPct}%
-                              </td>
-                              <td className="p-2 text-center text-muted-foreground">{t.barsHeld}</td>
-                            </tr>
-                          );
-                        }
-                        return rows;
-                      })()}
+                              )}
+                            </td>
+                            <td className={`p-2 text-right font-mono font-bold ${pnl >= 0 ? "text-chart-green" : "text-chart-red"}`}>
+                              {pnl >= 0 ? "+" : ""}{pnl}%
+                              {t.isPartialCombo && <div className="text-[9px] text-muted-foreground font-normal">TP1: +{t.tp1PnlPct}%</div>}
+                            </td>
+                            <td className="p-2 text-center text-muted-foreground">{t.barsHeld}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
