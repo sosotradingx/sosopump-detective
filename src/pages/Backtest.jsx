@@ -87,7 +87,7 @@ function runBacktest(klines, cfg) {
 
       // --- Partial TP1 check (only if TP1 < TP2) ---
       if (cfg.usePartialTP && !openTrade.partialTPHit) {
-        const tp1Price = openTrade.takeProfit * (cfg.partialTPTarget / cfg.takeProfitPct);
+        const tp1Price = openTrade.rawEntryPrice * (1 + cfg.partialTPTarget / 100);
         const tp2Price = openTrade.takeProfit;
         if (tp1Price < tp2Price && high >= tp1Price) {
           const effectiveTP1 = tp1Price * (1 - COMMISSION_PCT / 100 / 2);
