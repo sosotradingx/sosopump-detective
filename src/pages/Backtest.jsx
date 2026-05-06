@@ -46,18 +46,39 @@ function StatCard({ label, value, sub, color = "text-foreground" }) {
   );
 }
 
+const COMMISSION_PCT = 0.08; // 0.04% entry + 0.04% exit (Binance Futures taker)
+
 function runBacktest(klines, cfg) {
   const trades = [];
   const totalBars = klines.length;
   const warmup = 60; // minimum bars before we start scanning
 
   let openTrade = null;
+  let pendingEntry = null; // signal detected on bar i → entry on bar i+1 open
 
   for (let i = warmup; i < totalBars; i++) {
-    const slice = klines.slice(0, i + 1);
     const bar = { ...klines[i] };
 
-    // Check exit first if in trade
+    // --- Execute pending entry on the OPEN of bar i (next bar after signal) ---
+    if (pendingEntry) {
+      const entryPrice = bar.open; // realistic: fill at next bar open
+      const pf = entryPrice < 0.001 ? 1e10 : entryPrice < 0.01 ? 1e8 : entryPrice < 1 ? 1e6 : 1e4;
+      // Apply entry commission to effective entry price
+      const effectiveEntry = entryPrice * (1 + COMMISSION_PCT / 100 / 2);
+      openTrade = {
+        entryBar: i,
+        entryTime: bar.time,
+        entryPrice: Math.round(effectiveEntry * pf) / pf,
+        rawEntryPrice: entryPrice,
+        stopLoss: Math.round(entryPrice * (1 - cfg.stopLossPct / 100) * pf) / pf,
+        takeProfit: Math.round(entryPrice * (1 + cfg.takeProfitPct / 100) * pf) / pf,
+        score: pendingEntry.score,
+        pumpStatus: pendingEntry.pumpStatus,
+      };
+      pendingEntry = null;
+    }
+
+    // Check exit if in trade
     if (openTrade) {
       const high = bar.high;
       const low = bar.low;
@@ -66,20 +87,19 @@ function runBacktest(klines, cfg) {
 
       // --- Partial TP1 check (only if TP1 < TP2) ---
       if (cfg.usePartialTP && !openTrade.partialTPHit) {
-        const tp1Price = openTrade.entryPrice * (1 + (cfg.partialTPTarget ?? 10) / 100);
+        const tp1Price = openTrade.takeProfit * (cfg.partialTPTarget / cfg.takeProfitPct);
         const tp2Price = openTrade.takeProfit;
-        // TP1 must be strictly below TP2 to make sense
         if (tp1Price < tp2Price && high >= tp1Price) {
-          const partialPct = ((tp1Price - openTrade.entryPrice) / openTrade.entryPrice) * 100;
+          const effectiveTP1 = tp1Price * (1 - COMMISSION_PCT / 100 / 2);
+          const partialPct = ((effectiveTP1 - openTrade.entryPrice) / openTrade.entryPrice) * 100;
           const remainWeight = (100 - (cfg.partialTPPercent ?? 50)) / 100;
           const soldWeight = (cfg.partialTPPercent ?? 50) / 100;
 
-          // Record partial close trade
           trades.push({
             ...openTrade,
             exitBar: i,
             exitTime: bar.time,
-            exitPrice: tp1Price,
+            exitPrice: effectiveTP1,
             exitReason: "partial_tp",
             pnlPct: Math.round(partialPct * 100) / 100,
             pnlPctWeighted: Math.round(partialPct * soldWeight * 100) / 100,
@@ -88,14 +108,13 @@ function runBacktest(klines, cfg) {
             partialWeight: soldWeight,
           });
 
-          // Update remaining trade — move SL to breakeven optionally
           openTrade = {
             ...openTrade,
             partialTPHit: true,
-            stopLoss: cfg.moveSlToBreakeven ? openTrade.entryPrice : openTrade.stopLoss,
+            stopLoss: cfg.moveSlToBreakeven ? openTrade.rawEntryPrice : openTrade.stopLoss,
             remainWeight,
           };
-          continue; // skip TP2 check on same bar
+          continue;
         }
       }
 
@@ -108,16 +127,20 @@ function runBacktest(klines, cfg) {
       }
 
       if (exitPrice) {
-        const rawPnlPct = ((exitPrice - openTrade.entryPrice) / openTrade.entryPrice) * 100;
+        // Apply exit commission
+        const effectiveExit = exitReason === "take_profit"
+          ? exitPrice * (1 - COMMISSION_PCT / 100 / 2)
+          : exitPrice * (1 + COMMISSION_PCT / 100 / 2);
+        const rawPnlPct = ((effectiveExit - openTrade.entryPrice) / openTrade.entryPrice) * 100;
         const weight = openTrade.remainWeight ?? 1;
         trades.push({
           ...openTrade,
           exitBar: i,
           exitTime: bar.time,
-          exitPrice,
+          exitPrice: effectiveExit,
           exitReason,
-          pnlPct: Math.round(rawPnlPct * 100) / 100,          // P&L real afișat
-          pnlPctWeighted: Math.round(rawPnlPct * weight * 100) / 100, // pentru equity
+          pnlPct: Math.round(rawPnlPct * 100) / 100,
+          pnlPctWeighted: Math.round(rawPnlPct * weight * 100) / 100,
           barsHeld: i - openTrade.entryBar,
         });
         openTrade = null;
@@ -125,44 +148,38 @@ function runBacktest(klines, cfg) {
       continue; // one trade at a time
     }
 
-    // Scan for entry
-    const analysis = analyzePump(slice, {
-      volume_multiplier: cfg.volumeMultiplier,
-      adx_threshold: cfg.adxThreshold,
-      exhaustion_rsi: cfg.exhaustionRsi,
-      use_trend_filter: cfg.useTrendFilter,
-      noise_filter: cfg.noiseFilter,
-      use_macd_confirmation: cfg.useMacd,
-      use_bb_squeeze: cfg.useBbSqueeze,
-      use_adx_filter: cfg.useAdx,
-      use_obv_divergence: cfg.useObv,
-      use_volume_accumulation: cfg.useVolAccum,
-    });
+    // Scan for signal (entry will be executed on NEXT bar open)
+    if (!pendingEntry) {
+      const slice = klines.slice(0, i + 1);
+      const analysis = analyzePump(slice, {
+        volume_multiplier: cfg.volumeMultiplier,
+        adx_threshold: cfg.adxThreshold,
+        exhaustion_rsi: cfg.exhaustionRsi,
+        use_trend_filter: cfg.useTrendFilter,
+        noise_filter: cfg.noiseFilter,
+        use_macd_confirmation: cfg.useMacd,
+        use_bb_squeeze: cfg.useBbSqueeze,
+        use_adx_filter: cfg.useAdx,
+        use_obv_divergence: cfg.useObv,
+        use_volume_accumulation: cfg.useVolAccum,
+      });
 
-    if (analysis.totalScore >= cfg.minScore) {
-      const price = bar.close;
-      const pf = price < 0.001 ? 1e10 : price < 0.01 ? 1e8 : price < 1 ? 1e6 : 1e4;
-      openTrade = {
-        entryBar: i,
-        entryTime: bar.time,
-        entryPrice: price,
-        stopLoss: Math.round(price * (1 - cfg.stopLossPct / 100) * pf) / pf,
-        takeProfit: Math.round(price * (1 + cfg.takeProfitPct / 100) * pf) / pf,
-        score: analysis.totalScore,
-        pumpStatus: analysis.pumpStatus,
-      };
+      if (analysis.totalScore >= cfg.minScore) {
+        pendingEntry = { score: analysis.totalScore, pumpStatus: analysis.pumpStatus };
+      }
     }
   }
 
-  // Close any remaining open trade at last bar price
+  // Close any remaining open trade at last bar close (with commission)
   if (openTrade) {
     const lastBar = klines[totalBars - 1];
-    const pnlPct = ((lastBar.close - openTrade.entryPrice) / openTrade.entryPrice) * 100;
+    const effectiveExit = lastBar.close * (1 - COMMISSION_PCT / 100 / 2);
+    const pnlPct = ((effectiveExit - openTrade.entryPrice) / openTrade.entryPrice) * 100;
     trades.push({
       ...openTrade,
       exitBar: totalBars - 1,
       exitTime: lastBar.time,
-      exitPrice: lastBar.close,
+      exitPrice: effectiveExit,
       exitReason: "timeout",
       pnlPct: Math.round(pnlPct * 100) / 100,
       barsHeld: totalBars - 1 - openTrade.entryBar,
@@ -205,45 +222,50 @@ export default function Backtest() {
       const trades = runBacktest(klines, cfg);
       if (trades.length === 0) continue;
 
-      const wins = trades.filter(t => t.pnlPct > 0).length;
-      const totalPnl = trades.reduce((s, t) => s + t.pnlPct, 0);
+        // Count partial+remainder pairs as 1 trade
+      const completedTrades = trades.filter(t => t.exitReason !== "partial_tp");
+      const wins = completedTrades.filter(t => t.pnlPct > 0).length;
+      const totalPnl = completedTrades.reduce((s, t) => s + (t.pnlPctWeighted ?? t.pnlPct), 0);
       symbolResults.push({
         symbol: pair.symbol,
-        trades: trades.length,
+        trades: completedTrades.length,
         wins,
-        losses: trades.length - wins,
-        winRate: Math.round((wins / trades.length) * 100),
+        losses: completedTrades.length - wins,
+        winRate: Math.round((wins / completedTrades.length) * 100),
         totalPnl: Math.round(totalPnl * 100) / 100,
-        avgPnl: Math.round((totalPnl / trades.length) * 100) / 100,
+        avgPnl: Math.round((totalPnl / completedTrades.length) * 100) / 100,
       });
       allTrades.push(...trades.map(t => ({ ...t, symbol: pair.symbol })));
 
       await new Promise(r => setTimeout(r, 80));
     }
 
-    // Build equity curve
+    // Build equity curve — only on completed trades (partial_tp already folded into remainder)
     const sortedTrades = allTrades.sort((a, b) => (a.entryTime || 0) - (b.entryTime || 0));
+    const sortedCompleted = sortedTrades.filter(t => t.exitReason !== "partial_tp");
     let equity = 1000;
     const fmtDate = (ts) => ts ? new Date(ts).toLocaleDateString("ro-RO", { day: "2-digit", month: "2-digit" }) : "";
     const equityCurve = [{ date: "", equity }];
-    sortedTrades.forEach((t) => {
+    sortedCompleted.forEach((t) => {
       const effectivePnl = t.pnlPctWeighted ?? t.pnlPct;
       equity *= 1 + effectivePnl / 100;
       equityCurve.push({ date: fmtDate(t.exitTime), equity: Math.round(equity * 100) / 100 });
     });
 
-    const totalTrades = allTrades.length;
+    // Only count completed trades (not partial_tp legs) for stats
+    const completedAllTrades = allTrades.filter(t => t.exitReason !== "partial_tp");
+    const totalTrades = completedAllTrades.length;
     const eff = t => t.pnlPctWeighted ?? t.pnlPct;
-    const wins = allTrades.filter(t => eff(t) > 0).length;
-    const losses = allTrades.filter(t => eff(t) < 0).length;
-    const avgPnl = totalTrades > 0 ? allTrades.reduce((s, t) => s + eff(t), 0) / totalTrades : 0;
+    const wins = completedAllTrades.filter(t => eff(t) > 0).length;
+    const losses = completedAllTrades.filter(t => eff(t) < 0).length;
+    const avgPnl = totalTrades > 0 ? completedAllTrades.reduce((s, t) => s + eff(t), 0) / totalTrades : 0;
     // Real portfolio return based on compounded equity curve
     const totalPnl = ((equity - 1000) / 1000) * 100;
-    const maxWin = totalTrades > 0 ? Math.max(...allTrades.map(t => eff(t))) : 0;
-    const maxLoss = totalTrades > 0 ? Math.min(...allTrades.map(t => eff(t))) : 0;
+    const maxWin = totalTrades > 0 ? Math.max(...completedAllTrades.map(t => eff(t))) : 0;
+    const maxLoss = totalTrades > 0 ? Math.min(...completedAllTrades.map(t => eff(t))) : 0;
     const profitFactor = losses > 0
-      ? Math.abs(allTrades.filter(t => eff(t) > 0).reduce((s, t) => s + eff(t), 0) /
-          allTrades.filter(t => eff(t) <= 0).reduce((s, t) => s + eff(t), 0))
+      ? Math.abs(completedAllTrades.filter(t => eff(t) > 0).reduce((s, t) => s + eff(t), 0) /
+          completedAllTrades.filter(t => eff(t) <= 0).reduce((s, t) => s + eff(t), 0))
       : Infinity;
 
     setResults({
