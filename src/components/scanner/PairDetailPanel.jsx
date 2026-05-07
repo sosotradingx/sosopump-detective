@@ -14,11 +14,8 @@ export default function PairDetailPanel({ pair, isFavorite, onToggleFavorite, on
   const [klines, setKlines] = useState([]);
   const [loadingChart, setLoadingChart] = useState(false);
 
-  if (!pair) return null;
-  const a = pair.analysis || {};
-  const positive = pair.priceChangePercent >= 0;
-
   const loadChart = async (tf) => {
+    if (!pair) return;
     setLoadingChart(true);
     const data = await fetchKlines(pair.symbol, tf, 100, true);
     setKlines(data);
@@ -26,8 +23,12 @@ export default function PairDetailPanel({ pair, isFavorite, onToggleFavorite, on
   };
 
   useEffect(() => {
-    loadChart(timeframe);
-  }, [pair.symbol, timeframe]);
+    if (pair) loadChart(timeframe);
+  }, [pair?.symbol, timeframe]);
+
+  if (!pair) return null;
+  const a = pair.analysis || {};
+  const positive = pair.priceChangePercent >= 0;
 
   return (
     <>

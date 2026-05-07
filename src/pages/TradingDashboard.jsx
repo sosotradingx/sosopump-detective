@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -6,7 +6,8 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from "recharts";
 import { TrendingUp, TrendingDown, BarChart2, PieChart as PieIcon, Activity } from "lucide-react";
-import { format } from "date-fns";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { format, subDays } from "date-fns";
 
 const COLORS = ["#26A69A","#EF5350","#2196F3","#FF9800","#9C27B0","#FFD700","#4CAF50","#FF5722","#00BCD4","#E91E63"];
 
@@ -32,14 +33,30 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
+const PERIOD_OPTIONS = [
+  { label: "3 zile", value: "3" },
+  { label: "7 zile", value: "7" },
+  { label: "30 zile", value: "30" },
+  { label: "Toate", value: "all" },
+];
+
 export default function TradingDashboard() {
+  const [period, setPeriod] = useState("3");
+
   const { data: trades = [], isLoading } = useQuery({
     queryKey: ["paper-trades-dashboard"],
-    queryFn: () => base44.entities.PaperTrade.list("-created_date", 200),
+    queryFn: () => base44.entities.PaperTrade.list("-created_date", 500),
   });
 
   const closedTrades = useMemo(() => trades.filter(t => t.status === "closed"), [trades]);
   const openTrades = useMemo(() => trades.filter(t => t.status === "open"), [trades]);
+
+  // Filter closed trades by selected period (for daily charts only)
+  const filteredClosedTrades = useMemo(() => {
+    if (period === "all") return closedTrades;
+    const cutoff = subDays(new Date(), parseInt(period));
+    return closedTrades.filter(t => new Date(t.updated_date || t.created_date) >= cutoff);
+  }, [closedTrades, period]);
 
   // --- Equity Curve ---
   const equityCurve = useMemo(() => {
@@ -63,7 +80,7 @@ export default function TradingDashboard() {
   // --- Daily Win Rate ---
   const dailyStats = useMemo(() => {
     const byDay = {};
-    closedTrades.forEach(t => {
+    filteredClosedTrades.forEach(t => {
       const day = format(new Date(t.updated_date || t.created_date), "dd MMM");
       if (!byDay[day]) byDay[day] = { day, wins: 0, losses: 0, pnl: 0, total: 0 };
       byDay[day].total++;
@@ -177,6 +194,19 @@ export default function TradingDashboard() {
       </div>
 
       {/* Daily Win Rate + PnL */}
+      <div className="flex items-center gap-3 mb-1">
+        <span className="text-xs text-muted-foreground font-mono">Perioadă grafice zilnice:</span>
+        <Select value={period} onValueChange={setPeriod}>
+          <SelectTrigger className="w-28 h-7 text-xs bg-secondary">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PERIOD_OPTIONS.map(o => (
+              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-card border border-border rounded-xl p-4">
           <div className="flex items-center gap-2 mb-4">
