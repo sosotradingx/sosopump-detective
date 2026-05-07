@@ -4,6 +4,7 @@ import { analyzePump } from "../components/scanner/pumpEngine";
 import ScannerRow from "../components/scanner/ScannerRow";
 import TradingViewModal from "../components/scanner/TradingViewModal";
 import ScannerSettings from "../components/scanner/ScannerSettings";
+import PairDetailPanel from "../components/scanner/PairDetailPanel";
 import AlertsPanel from "../components/alerts/AlertsPanel";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useNotifications } from "@/hooks/useNotifications";
@@ -38,6 +39,7 @@ export default function Scanner() {
   const [sortDir, setSortDir] = useState("desc");
   const [lastUpdate, setLastUpdate] = useState(null);
   const [selectedSymbol, setSelectedSymbol] = useState(null);
+  const [selectedPair, setSelectedPair] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [alerts, setAlerts] = useState([]);
@@ -289,6 +291,7 @@ export default function Scanner() {
                   key={pair.symbol}
                   pair={pair}
                   onSelect={(sym) => setSelectedSymbol(sym)}
+                  onRowClick={(p) => setSelectedPair(p)}
                   isFavorite={isFavorite(pair.symbol)}
                   onToggleFavorite={() => toggleFavorite(pair.symbol)}
                 />
@@ -297,6 +300,17 @@ export default function Scanner() {
           </table>
         </div>
       </div>
+
+      {/* Pair Detail Panel */}
+      {selectedPair && (
+        <PairDetailPanel
+          pair={selectedPair}
+          isFavorite={isFavorite(selectedPair.symbol)}
+          onToggleFavorite={() => toggleFavorite(selectedPair.symbol)}
+          onOpenChart={(sym) => setSelectedSymbol(sym)}
+          onClose={() => setSelectedPair(null)}
+        />
+      )}
 
       {/* TradingView Modal */}
       {selectedSymbol && (

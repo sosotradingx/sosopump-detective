@@ -12,13 +12,13 @@ const statusConfig = {
   INACTIVE: { bg: "bg-muted/10",         text: "text-muted-foreground", border: "border-border" },
 };
 
-export default function ScannerRow({ pair, onSelect, isFavorite, onToggleFavorite }) {
+export default function ScannerRow({ pair, onSelect, onRowClick, isFavorite, onToggleFavorite }) {
   const a = pair.analysis || {};
   const sc = statusConfig[a.pumpStatus] || statusConfig.INACTIVE;
   const positive = pair.priceChangePercent >= 0;
 
   return (
-    <tr className="border-b border-border/30 hover:bg-accent/30 transition-colors text-sm">
+    <tr className="border-b border-border/30 hover:bg-accent/30 transition-colors text-sm cursor-pointer" onClick={() => onRowClick?.(pair)}>
       <td className="p-3">
         <div className="flex items-center gap-2">
           <span className="text-base">{a.pumpEmoji || "⚫"}</span>
@@ -75,10 +75,10 @@ export default function ScannerRow({ pair, onSelect, isFavorite, onToggleFavorit
       </td>
       <td className="p-3 text-center">
         <div className="flex items-center gap-1 justify-center">
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onToggleFavorite?.()}>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); onToggleFavorite?.(); }}>
             <Star className={`w-3 h-3 ${isFavorite ? "fill-chart-gold text-chart-gold" : "text-muted-foreground"}`} />
           </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onSelect?.(pair.symbol)}>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); onSelect?.(pair.symbol); }}>
             <Eye className="w-3 h-3" />
           </Button>
         </div>
