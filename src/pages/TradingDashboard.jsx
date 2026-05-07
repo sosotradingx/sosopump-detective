@@ -81,18 +81,21 @@ export default function TradingDashboard() {
   const dailyStats = useMemo(() => {
     const byDay = {};
     filteredClosedTrades.forEach(t => {
-      const day = format(new Date(t.updated_date || t.created_date), "dd MMM");
-      if (!byDay[day]) byDay[day] = { day, wins: 0, losses: 0, pnl: 0, total: 0 };
+      const dateObj = new Date(t.updated_date || t.created_date);
+      const day = format(dateObj, "dd MMM");
+      if (!byDay[day]) byDay[day] = { day, rawDate: format(dateObj, "yyyy-MM-dd"), wins: 0, losses: 0, pnl: 0, total: 0 };
       byDay[day].total++;
       byDay[day].pnl += (t.pnl_usd || 0);
       if ((t.pnl_usd || 0) > 0) byDay[day].wins++;
       else byDay[day].losses++;
     });
-    return Object.values(byDay).map(d => ({
-      ...d,
-      winRate: d.total > 0 ? Math.round((d.wins / d.total) * 100) : 0,
-      pnl: Math.round(d.pnl * 100) / 100,
-    }));
+    return Object.values(byDay)
+      .sort((a, b) => new Date(a.rawDate) - new Date(b.rawDate))
+      .map(d => ({
+        ...d,
+        winRate: d.total > 0 ? Math.round((d.wins / d.total) * 100) : 0,
+        pnl: Math.round(d.pnl * 100) / 100,
+      }));
   }, [filteredClosedTrades]);
 
   // --- Distribution per pair ---
