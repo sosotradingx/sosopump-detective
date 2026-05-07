@@ -93,7 +93,7 @@ export default function TradingDashboard() {
       winRate: d.total > 0 ? Math.round((d.wins / d.total) * 100) : 0,
       pnl: Math.round(d.pnl * 100) / 100,
     }));
-  }, [closedTrades]);
+  }, [filteredClosedTrades]);
 
   // --- Distribution per pair ---
   const pairDistribution = useMemo(() => {
