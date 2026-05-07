@@ -1,23 +1,43 @@
-import React from "react";
-import { formatPrice, formatVolume } from "./binanceApi";
+import React, { useState, useEffect } from "react";
+import { formatPrice, formatVolume, fetchKlines } from "./binanceApi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { X, Eye, Star, TrendingUp, TrendingDown } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { X, Star, RefreshCw, Loader2 } from "lucide-react";
 import ScoreBreakdown from "@/components/dashboard/ScoreBreakdown";
+import CandleChart from "@/components/chart/CandleChart";
 
-export default function PairDetailPanel({ pair, isFavorite, onToggleFavorite, onOpenChart, onClose }) {
+const TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"];
+
+export default function PairDetailPanel({ pair, isFavorite, onToggleFavorite, onClose }) {
+  const [timeframe, setTimeframe] = useState("15m");
+  const [klines, setKlines] = useState([]);
+  const [loadingChart, setLoadingChart] = useState(false);
+
   if (!pair) return null;
   const a = pair.analysis || {};
   const positive = pair.priceChangePercent >= 0;
+
+  const loadChart = async (tf) => {
+    setLoadingChart(true);
+    const data = await fetchKlines(pair.symbol, tf, 100, true);
+    setKlines(data);
+    setLoadingChart(false);
+  };
+
+  useEffect(() => {
+    loadChart(timeframe);
+  }, [pair.symbol, timeframe]);
 
   return (
     <>
       {/* Backdrop */}
       <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
 
-      {/* Panel - slides up from bottom on mobile, right sidebar on desktop */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-2xl p-4 space-y-4 max-h-[85vh] overflow-y-auto
-                      lg:top-0 lg:bottom-0 lg:left-auto lg:right-0 lg:w-96 lg:border-t-0 lg:border-l lg:rounded-t-none lg:rounded-l-2xl">
+      {/* Panel */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-2xl p-4 space-y-4 max-h-[92vh] overflow-y-auto
+                      lg:top-0 lg:bottom-0 lg:left-auto lg:right-0 lg:w-[480px] lg:border-t-0 lg:border-l lg:rounded-t-none lg:rounded-l-2xl">
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -34,7 +54,7 @@ export default function PairDetailPanel({ pair, isFavorite, onToggleFavorite, on
           </Button>
         </div>
 
-        {/* Status + Actions */}
+        {/* Status + Favorite */}
         <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="outline" className="text-sm px-3 py-1">
             {a.pumpStatus || "INACTIVE"}
@@ -43,9 +63,32 @@ export default function PairDetailPanel({ pair, isFavorite, onToggleFavorite, on
             <Star className={`w-4 h-4 mr-1 ${isFavorite ? "fill-chart-gold text-chart-gold" : ""}`} />
             {isFavorite ? "Favorit" : "Adaugă favorit"}
           </Button>
-          <Button size="sm" className="bg-primary" onClick={() => { onClose(); onOpenChart(pair.symbol); }}>
-            <Eye className="w-4 h-4 mr-1" /> Grafic
-          </Button>
+        </div>
+
+        {/* Chart with timeframe selector */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Select value={timeframe} onValueChange={(v) => setTimeframe(v)}>
+              <SelectTrigger className="w-24 bg-secondary h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TIMEFRAMES.map(tf => (
+                  <SelectItem key={tf} value={tf}>{tf}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => loadChart(timeframe)} disabled={loadingChart}>
+              {loadingChart ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+            </Button>
+          </div>
+          {loadingChart ? (
+            <div className="h-48 bg-secondary/30 rounded-xl flex items-center justify-center">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <CandleChart klines={klines} />
+          )}
         </div>
 
         {/* Key Stats */}

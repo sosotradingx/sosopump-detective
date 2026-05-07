@@ -307,7 +307,6 @@ export default function Scanner() {
           pair={selectedPair}
           isFavorite={isFavorite(selectedPair.symbol)}
           onToggleFavorite={() => toggleFavorite(selectedPair.symbol)}
-          onOpenChart={(sym) => setSelectedSymbol(sym)}
           onClose={() => setSelectedPair(null)}
         />
       )}
