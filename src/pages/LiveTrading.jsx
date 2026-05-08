@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { base44 } from "@/api/base44Client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchTopPairs, formatPrice } from "../components/scanner/binanceApi";
+import { getAccountBalance, placeOrder, getOpenOrders, getUserTrades } from "../components/live-trading/BinanceBrowserApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -50,18 +51,19 @@ export default function LiveTrading() {
     }
   }, [apiKeys, activeKey]);
 
-  // Fetch balance from Binance
+  // Fetch balance from Binance (direct client-side)
   const fetchBalance = useCallback(async () => {
     if (!activeKey || !user) return;
     setLoadingBalance(true);
     try {
-      const response = await base44.functions.invoke("binanceApi", {
-        action: "getBalance",
-        keyId: activeKey.id
-      });
-      const accountData = response.data;
-      const totalWallet = accountData?.totalWalletBalance ? parseFloat(accountData.totalWalletBalance) : 0;
-      const availableBalance = accountData?.availableBalance ? parseFloat(accountData.availableBalance) : 0;
+      // Get secret from backend
+      const decrypted = await base44.functions.invoke("decryptApiSecret", { keyId: activeKey.id });
+      const secret = decrypted.data.secret;
+      
+      // Call Binance directly from browser
+      const accountData = await getAccountBalance(activeKey.api_key, secret);
+      const totalWallet = parseFloat(accountData?.totalWalletBalance || 0);
+      const availableBalance = parseFloat(accountData?.availableBalance || 0);
       setBalance({ totalWallet, availableBalance });
       setBotLog(`✅ Balanță actualizată: ${availableBalance.toFixed(2)} USDT`);
     } catch (e) {
@@ -94,26 +96,26 @@ export default function LiveTrading() {
     return () => clearInterval(interval);
   }, [loadPrices]);
 
-  // Place order mutation
+  // Place order mutation (direct client-side)
   const placeOrderMutation = useMutation({
     mutationFn: async () => {
       if (!activeKey || !user) throw new Error("No API key");
       
       setPlacingOrder(true);
       try {
-        const response = await base44.functions.invoke("binanceApi", {
-          action: "placeOrder",
-          keyId: activeKey.id,
-          params: {
-            symbol: orderParams.symbol,
-            side: orderParams.side,
-            type: "LIMIT",
-            timeInForce: "GTC",
-            quantity: orderParams.quantity.toString(),
-            price: orderParams.price.toString(),
-          }
+        // Get secret from backend
+        const decrypted = await base44.functions.invoke("decryptApiSecret", { keyId: activeKey.id });
+        const secret = decrypted.data.secret;
+        
+        // Place order directly from browser
+        const orderRes = await placeOrder(activeKey.api_key, secret, {
+          symbol: orderParams.symbol,
+          side: orderParams.side,
+          type: "LIMIT",
+          timeInForce: "GTC",
+          quantity: orderParams.quantity.toString(),
+          price: orderParams.price.toString(),
         });
-        const orderRes = response.data;
 
         await base44.entities.LiveTrade.create({
           symbol: orderParams.symbol,
