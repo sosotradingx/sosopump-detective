@@ -119,8 +119,15 @@ export default function LiveTrading() {
         params: {},
       });
       
+      if (result.data.error) {
+        const msg = result.data.error;
+        console.error("Binance API error:", msg);
+        setBotLog(`❌ ${msg}`);
+        return;
+      }
+      
       const orders = Array.isArray(result.data) ? result.data : [];
-      console.log("Binance open orders:", orders, "Status:", result.status);
+      console.log("Binance open orders:", orders);
       
       if (orders.length === 0) {
         console.log("No open orders on Binance");
@@ -148,7 +155,7 @@ export default function LiveTrading() {
       refetchTrades();
     } catch (e) {
       console.error("Error fetching open orders:", e);
-      setBotLog(`❌ Eroare preluare ordine: ${e.message}`);
+      setBotLog(`❌ Eroare: ${e.message}`);
     }
   }, [activeKey, user, trades, refetchTrades]);
 

@@ -94,11 +94,20 @@ Deno.serve(async (req) => {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const errorText = await response.text();
+      console.error(`Binance API error (${action}):`, response.status, errorText);
+      let errorMsg = `Binance error: ${response.statusText}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMsg = errorJson.msg || errorMsg;
+      } catch (e) {
+        errorMsg = errorText;
+      }
       return Response.json({ 
-        error: error.msg || `Binance error: ${response.statusText}`,
-        status: response.status 
-      }, { status: response.status });
+        error: errorMsg,
+        binanceStatus: response.status,
+        action: action
+      }, { status: 400 });
     }
 
     const data = await response.json();
