@@ -363,10 +363,8 @@ export default function PaperTrading() {
     const cur = prices[t.symbol] || t.entry_price;
     return s + (cur - t.entry_price) * t.quantity;
   }, 0);
-  // Capital blocat în pozițiile deschise (retras din balanță)
-  const lockedCapital = openTrades.reduce((s, t) => s + (t.entry_price * t.quantity), 0);
-  // Balanță disponibilă = capital inițial + profit realizat - capital blocat în open trades
-  const currentBalance = initialBalance + totalPnL - lockedCapital;
+  // Balanță = capital inițial + profit realizat + profit nerealizat curent
+  const currentBalance = initialBalance + totalPnL + unrealizedPnL;
   const winRate = closedTrades.length > 0
     ? Math.round((closedTrades.filter(t => (t.pnl_usd || 0) > 0).length / closedTrades.length) * 100)
     : 0;
