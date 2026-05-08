@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { base44 } from "@/api/base44Client";
+import { useRef as useRefReal } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchTopPairs, formatPrice } from "../components/scanner/binanceApi";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,10 @@ export default function LiveTrading() {
   const [orderDialog, setOrderDialog] = useState(false);
   const [placingOrder, setPlacingOrder] = useState(false);
   const [botLog, setBotLog] = useState("");
+  const [listenKey, setListenKey] = useState(null);
+  const wsRef = useRef(null);
+  const listenKeyRef = useRef(null);
+  const renewIntervalRef = useRef(null);
 
   const [orderParams, setOrderParams] = useState({
     symbol: "BTCUSDT",
@@ -88,17 +93,71 @@ export default function LiveTrading() {
     setLoadingBalance(false);
   }, [activeKey, user]);
 
+  // Get listenKey and open WebSocket
+  const initializeWebSocket = useCallback(async () => {
+    if (!activeKey || !user) return;
+    try {
+      const res = await base44.functions.invoke("binanceApi", { action: "getListenKey", keyId: activeKey.id });
+      if (!res.data.success) throw new Error(res.data.error || "Failed to get listenKey");
+      
+      const key = res.data.data.listenKey;
+      setListenKey(key);
+      listenKeyRef.current = key;
+      
+      // Open WebSocket
+      const ws = new WebSocket(`wss://fstream.binance.com/ws/${key}`);
+      wsRef.current = ws;
+      
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.e === 'ACCOUNT_UPDATE') {
+          // Update balance from WS
+          const balances = data.a.B || [];
+          const usdt = balances.find(b => b.a === 'USDT');
+          if (usdt) {
+            setBalance({
+              availableBalance: parseFloat(usdt.f),
+              totalWallet: parseFloat(usdt.f) + parseFloat(usdt.r)
+            });
+          }
+        }
+      };
+      
+      ws.onerror = () => setBotLog(`❌ WebSocket error`);
+      ws.onclose = () => setBotLog(`⚠️ WebSocket disconnected`);
+      
+      // Renew listenKey every 30 min
+      renewIntervalRef.current = setInterval(async () => {
+        try {
+          await base44.functions.invoke("binanceApi", { action: "renewListenKey", keyId: activeKey.id, params: { listenKey: key } });
+        } catch (e) {
+          console.error("Failed to renew listenKey:", e);
+        }
+      }, 30 * 60 * 1000);
+      
+      setBotLog(`✅ WebSocket connected`);
+    } catch (e) {
+      setBotLog(`❌ Eroare: ${e.message}`);
+    }
+  }, [activeKey, user]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (wsRef.current) wsRef.current.close();
+      if (renewIntervalRef.current) clearInterval(renewIntervalRef.current);
+      if (listenKeyRef.current) {
+        base44.functions.invoke("binanceApi", { action: "closeListenKey", keyId: activeKey?.id, params: { listenKey: listenKeyRef.current } }).catch(() => {});
+      }
+    };
+  }, [activeKey]);
+
   useEffect(() => {
     if (activeKey) {
       fetchBalance();
+      initializeWebSocket();
     }
-    const interval = setInterval(() => {
-      if (activeKey) {
-        fetchBalance();
-      }
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [activeKey, fetchBalance]);
+  }, [activeKey, fetchBalance, initializeWebSocket]);
 
   // Load market prices
   const loadPrices = useCallback(async () => {

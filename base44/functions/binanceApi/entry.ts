@@ -84,6 +84,28 @@ Deno.serve(async (req) => {
         url = `https://fapi.binance.com/fapi/v1/openOrders?${queryString}&signature=${await hmacSha256(queryString, apiSecret)}`;
         break;
 
+      case 'getPositionRisk': {
+        const ts = Date.now().toString();
+        const qs = new URLSearchParams({ timestamp: ts }).toString();
+        url = `https://fapi.binance.com/fapi/v2/positionRisk?${qs}&signature=${await hmacSha256(qs, apiSecret)}`;
+        break;
+      }
+
+      case 'getListenKey':
+        method = 'POST';
+        url = `https://fapi.binance.com/fapi/v1/listenKey`;
+        break;
+
+      case 'renewListenKey':
+        method = 'PUT';
+        url = `https://fapi.binance.com/fapi/v1/listenKey?listenKey=${params.listenKey}`;
+        break;
+
+      case 'closeListenKey':
+        method = 'DELETE';
+        url = `https://fapi.binance.com/fapi/v1/listenKey?listenKey=${params.listenKey}`;
+        break;
+
       default:
         return Response.json({ error: 'Unknown action' }, { status: 400 });
     }
