@@ -79,7 +79,19 @@ export default function PaperTrading() {
     queryKey: ["paper-trades", user?.email],
     queryFn: () => base44.entities.PaperTrade.filter({ created_by: user.email }, "-created_date", 100),
     enabled: !!user,
+    refetchInterval: 15000, // re-fetch la 15s pentru a prinde închiderile din background
   });
+
+  // Real-time subscription - invalideaza query-ul cand backend-ul modifica tranzactii
+  useEffect(() => {
+    if (!user) return;
+    const unsubscribe = base44.entities.PaperTrade.subscribe((event) => {
+      if (event.type === "update" || event.type === "create") {
+        queryClient.invalidateQueries({ queryKey: ["paper-trades"] });
+      }
+    });
+    return () => unsubscribe();
+  }, [user, queryClient]);
 
   const createTrade = useMutation({
     mutationFn: (data) => base44.entities.PaperTrade.create(data),
