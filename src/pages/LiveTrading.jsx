@@ -109,54 +109,10 @@ export default function LiveTrading() {
     setLoadingBalance(false);
   }, [activeKey, user, signRequest]);
 
-  // Fetch open orders from Binance via backend function
+  // Fetch open orders - disabled due to geolocation restrictions
   const fetchOpenOrders = useCallback(async () => {
-    if (!activeKey || !user) return;
-    try {
-      const result = await base44.functions.invoke("binanceApi", {
-        action: "getOpenOrders",
-        keyId: activeKey.id,
-        params: {},
-      });
-      
-      if (!result.data.success && result.data.error) {
-        console.error("Binance API error:", result.data.error);
-        setBotLog(`❌ ${result.data.error}`);
-        return;
-      }
-      
-      const orders = Array.isArray(result.data.data) ? result.data.data : [];
-      console.log("Binance open orders:", orders);
-      
-      if (orders.length === 0) {
-        console.log("No open orders on Binance");
-        return;
-      }
-      
-      // Sync open orders to database
-      for (const order of orders) {
-        const orderId = String(order.orderId);
-        const exists = trades.find(t => String(t.binance_order_id) === orderId);
-        
-        if (!exists) {
-          console.log("Creating trade for order:", orderId, order);
-          await base44.entities.LiveTrade.create({
-            symbol: order.symbol,
-            side: order.side,
-            status: "open",
-            entry_price: parseFloat(order.price),
-            quantity: parseFloat(order.origQty),
-            binance_order_id: orderId,
-            notes: `Synced from Binance`,
-          });
-        }
-      }
-      refetchTrades();
-    } catch (e) {
-      console.error("Error fetching open orders:", e);
-      setBotLog(`❌ Eroare: ${e.message}`);
-    }
-  }, [activeKey, user, trades, refetchTrades]);
+    setBotLog(`⚠️ Sincronizare Binance indisponibilă din cauza restricțiilor geografice.`);
+  }, []);
 
   useEffect(() => {
     if (activeKey) {
