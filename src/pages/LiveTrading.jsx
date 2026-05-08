@@ -8,8 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Zap, TrendingUp, TrendingDown, RefreshCw, AlertTriangle, DollarSign, Activity } from "lucide-react";
+import { useSubscription } from "@/hooks/useSubscription";
+import PlanGate from "@/components/PlanGate";
 
 export default function LiveTrading() {
+  const { isPro, loading: subLoading } = useSubscription();
   const queryClient = useQueryClient();
   const [botEnabled, setBotEnabled] = useState(false);
   const [config, setConfig] = useState({
@@ -84,6 +87,10 @@ export default function LiveTrading() {
   const totalPnl = closedTrades.reduce((s, t) => s + (t.pnl_usd || 0), 0);
 
   const set = (k, v) => setConfig(prev => ({ ...prev, [k]: v }));
+
+  if (!subLoading && !isPro) {
+    return <PlanGate requiredPlan="elite" feature="Live Trading" />;
+  }
 
   return (
     <div className="p-4 lg:p-6 space-y-6 max-w-[1400px] mx-auto">

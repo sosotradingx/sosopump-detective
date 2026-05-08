@@ -3,10 +3,11 @@ import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
   Search, Activity, LineChart, Wallet, Settings, Menu, X,
-  LayoutGrid, BarChart2, FlaskConical, Zap, Key, Crown, LogOut
+  LayoutGrid, BarChart2, FlaskConical, Zap, Key, Crown, LogOut, Lock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { base44 } from "@/api/base44Client";
+import { useSubscription } from "@/hooks/useSubscription";
 
 const NAV_ITEMS = [
   { name: "Dashboard", icon: Activity, page: "Dashboard" },
@@ -22,8 +23,12 @@ const NAV_ITEMS = [
   { name: "Configurare", icon: Settings, page: "Config" },
 ];
 
+const PRO_PAGES = ["PaperTrading", "TradingDashboard", "LiveTrading", "ApiSettings"];
+const ELITE_PAGES = ["LiveTrading"];
+
 export default function Layout({ children, currentPageName }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { isPro, isElite, isFree } = useSubscription();
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -45,6 +50,9 @@ export default function Layout({ children, currentPageName }) {
         <nav className="flex-1 p-3 space-y-1">
           {NAV_ITEMS.map(item => {
             const active = currentPageName === item.page;
+            const needsElite = ELITE_PAGES.includes(item.page);
+            const needsPro = PRO_PAGES.includes(item.page);
+            const locked = (needsElite && !isElite) || (needsPro && !isPro);
             return (
               <Link
                 key={item.page}
@@ -52,11 +60,14 @@ export default function Layout({ children, currentPageName }) {
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
                   active
                     ? "bg-primary/15 text-primary border border-primary/20"
+                    : locked
+                    ? "text-muted-foreground/50 hover:text-muted-foreground hover:bg-accent/50"
                     : "text-muted-foreground hover:text-foreground hover:bg-accent"
                 }`}
               >
                 <item.icon className="w-4 h-4" />
-                {item.name}
+                <span className="flex-1">{item.name}</span>
+                {locked && <Lock className="w-3 h-3 opacity-50" />}
               </Link>
             );
           })}
@@ -97,21 +108,27 @@ export default function Layout({ children, currentPageName }) {
         </div>
         {mobileOpen && (
           <nav className="p-3 border-t border-border space-y-1">
-            {NAV_ITEMS.map(item => (
-              <Link
-                key={item.page}
-                to={createPageUrl(item.page)}
-                onClick={() => setMobileOpen(false)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm ${
-                  currentPageName === item.page
-                    ? "bg-primary/15 text-primary"
-                    : "text-muted-foreground"
-                }`}
-              >
-                <item.icon className="w-4 h-4" />
-                {item.name}
-              </Link>
-            ))}
+            {NAV_ITEMS.map(item => {
+              const needsElite = ELITE_PAGES.includes(item.page);
+              const needsPro = PRO_PAGES.includes(item.page);
+              const locked = (needsElite && !isElite) || (needsPro && !isPro);
+              return (
+                <Link
+                  key={item.page}
+                  to={createPageUrl(item.page)}
+                  onClick={() => setMobileOpen(false)}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm ${
+                    currentPageName === item.page
+                      ? "bg-primary/15 text-primary"
+                      : locked ? "text-muted-foreground/50" : "text-muted-foreground"
+                  }`}
+                >
+                  <item.icon className="w-4 h-4" />
+                  <span className="flex-1">{item.name}</span>
+                  {locked && <Lock className="w-3 h-3 opacity-40" />}
+                </Link>
+              );
+            })}
             <button
               onClick={() => base44.auth.logout()}
               className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm text-muted-foreground hover:text-destructive w-full"

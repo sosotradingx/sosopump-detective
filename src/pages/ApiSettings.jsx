@@ -7,8 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Key, Plus, Trash2, CheckCircle, AlertCircle, Loader2, Eye, EyeOff, ShieldAlert } from "lucide-react";
+import { useSubscription } from "@/hooks/useSubscription";
+import PlanGate from "@/components/PlanGate";
 
 export default function ApiSettings() {
+  const { isPro, loading: subLoading } = useSubscription();
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
@@ -68,6 +71,10 @@ export default function ApiSettings() {
   };
 
   const setF = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+
+  if (!subLoading && !isPro) {
+    return <PlanGate requiredPlan="pro" feature="API Keys (Live Trading)" />;
+  }
 
   return (
     <div className="p-4 lg:p-6 space-y-6 max-w-[800px] mx-auto">

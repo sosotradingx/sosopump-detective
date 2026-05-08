@@ -70,10 +70,14 @@ function ToggleField({ label, checked, onCheckedChange, description }) {
 export default function Config() {
   const queryClient = useQueryClient();
   const [config, setConfig] = useState(DEFAULT_CONFIG);
+  const [user, setUser] = useState(null);
+
+  useEffect(() => { base44.auth.me().then(setUser).catch(() => {}); }, []);
 
   const { data: configs = [] } = useQuery({
-    queryKey: ["scanner-config"],
-    queryFn: () => base44.entities.ScannerConfig.list("-created_date", 1),
+    queryKey: ["scanner-config", user?.email],
+    queryFn: () => base44.entities.ScannerConfig.filter({ created_by: user.email }, "-created_date", 1),
+    enabled: !!user,
   });
 
   useEffect(() => {

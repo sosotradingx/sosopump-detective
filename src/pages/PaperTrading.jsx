@@ -12,6 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Plus, X, Bot, Settings, Loader2, Zap, Activity } from "lucide-react";
+import { useSubscription } from "@/hooks/useSubscription";
+import PlanGate from "@/components/PlanGate";
 
 const DEFAULT_AUTO_CONFIG = {
   minScore: 70,
@@ -45,6 +47,7 @@ function saveAutoConfig(cfg) {
 }
 
 export default function PaperTrading() {
+  const { isPro, loading: subLoading } = useSubscription();
   const queryClient = useQueryClient();
   const [prices, setPrices] = useState({});
   const [openDialog, setOpenDialog] = useState(false);
@@ -367,6 +370,10 @@ export default function PaperTrading() {
   const winRate = closedTrades.length > 0
     ? Math.round((closedTrades.filter(t => (t.pnl_usd || 0) > 0).length / closedTrades.length) * 100)
     : 0;
+
+  if (!subLoading && !isPro) {
+    return <PlanGate requiredPlan="pro" feature="Paper Trading" />;
+  }
 
   return (
     <div className="p-4 lg:p-6 space-y-6 max-w-[1600px] mx-auto">

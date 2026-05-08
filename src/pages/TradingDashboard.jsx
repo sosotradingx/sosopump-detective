@@ -1,4 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
+import { useSubscription } from "@/hooks/useSubscription";
+import PlanGate from "@/components/PlanGate";
 import { base44 } from "@/api/base44Client";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -41,6 +43,7 @@ const PERIOD_OPTIONS = [
 ];
 
 export default function TradingDashboard() {
+  const { isPro, loading: subLoading } = useSubscription();
   const [period, setPeriod] = useState("3");
   const [user, setUser] = useState(null);
 
@@ -136,6 +139,10 @@ export default function TradingDashboard() {
   const avgLoss = closedTrades.filter(t => (t.pnl_usd || 0) < 0).reduce((s, t) => s + (t.pnl_usd || 0), 0)
     / (closedTrades.filter(t => (t.pnl_usd || 0) < 0).length || 1);
   const finalBalance = 10000 + totalPnL;
+
+  if (!subLoading && !isPro) {
+    return <PlanGate requiredPlan="pro" feature="Trading Dashboard" />;
+  }
 
   if (isLoading) {
     return (
