@@ -3,9 +3,10 @@ import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
   Search, Activity, LineChart, Wallet, Settings, Menu, X,
-  Flame, LayoutGrid, BarChart2, FlaskConical, Zap, Key, Crown
+  Flame, LayoutGrid, BarChart2, FlaskConical, Zap, Key, Crown, LogOut
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { base44 } from "@/api/base44Client";
 
 const NAV_ITEMS = [
   { name: "Dashboard", icon: Activity, page: "Dashboard" },
@@ -58,7 +59,7 @@ export default function Layout({ children, currentPageName }) {
             );
           })}
         </nav>
-        <div className="p-4 border-t border-border">
+        <div className="p-4 border-t border-border space-y-2">
           <div className="bg-secondary/50 rounded-lg p-3">
             <p className="text-[10px] font-mono text-muted-foreground">BINANCE API</p>
             <div className="flex items-center gap-2 mt-1">
@@ -66,6 +67,14 @@ export default function Layout({ children, currentPageName }) {
               <span className="text-xs text-pump-strong">Connected</span>
             </div>
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+            onClick={() => base44.auth.logout()}
+          >
+            <LogOut className="w-4 h-4 mr-2" /> Log Out
+          </Button>
         </div>
       </aside>
 
@@ -97,6 +106,12 @@ export default function Layout({ children, currentPageName }) {
                 {item.name}
               </Link>
             ))}
+            <button
+              onClick={() => base44.auth.logout()}
+              className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm text-muted-foreground hover:text-destructive w-full"
+            >
+              <LogOut className="w-4 h-4" /> Log Out
+            </button>
           </nav>
         )}
       </div>
