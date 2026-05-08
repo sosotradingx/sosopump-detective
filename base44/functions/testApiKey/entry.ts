@@ -17,10 +17,10 @@ Deno.serve(async (req) => {
     const user = await base44.auth.me();
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { api_key_id } = await req.json();
-    if (!api_key_id) return Response.json({ error: 'api_key_id required' }, { status: 400 });
+    const { keyId } = await req.json();
+    if (!keyId) return Response.json({ error: 'keyId required' }, { status: 400 });
 
-    const keys = await base44.asServiceRole.entities.UserApiKey.filter({ id: api_key_id });
+    const keys = await base44.asServiceRole.entities.UserApiKey.filter({ id: keyId });
     const keyRecord = keys?.[0];
 
     if (!keyRecord) return Response.json({ success: false, message: 'Cheia nu a fost găsită' });

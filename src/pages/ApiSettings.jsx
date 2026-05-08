@@ -45,10 +45,10 @@ export default function ApiSettings() {
   const testConnection = async (keyRecord) => {
     setTesting(keyRecord.id);
     try {
-      await base44.functions.invoke("testApiKey", { keyId: keyRecord.id });
+      const result = await base44.functions.invoke("testApiKey", { keyId: keyRecord.id });
       await base44.entities.UserApiKey.update(keyRecord.id, {
-        test_status: "ok",
-        test_message: "Conexiune stabilită ✓",
+        test_status: result.data.success ? "ok" : "error",
+        test_message: result.data.message,
         last_tested_at: new Date().toISOString(),
       });
       queryClient.invalidateQueries({ queryKey: ["userApiKeys"] });
