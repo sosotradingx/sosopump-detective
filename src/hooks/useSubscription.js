@@ -35,9 +35,11 @@ export function useSubscription() {
     load();
   }, []);
 
-  const isPro = plan === "pro" || plan === "elite";
-  const isElite = plan === "elite";
-  const isFree = plan === "free";
+  const isAdmin = user?.role === "admin";
+  // Adminii au acces complet la toate funcționalitățile
+  const isPro = isAdmin || plan === "pro" || plan === "elite";
+  const isElite = isAdmin || plan === "elite";
+  const isFree = !isAdmin && plan === "free";
 
-  return { user, plan, isPro, isElite, isFree, loading };
+  return { user, plan, isPro, isElite, isFree, isAdmin, loading };
 }
