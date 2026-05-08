@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { base44 } from "@/api/base44Client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchTopPairs, formatPrice } from "../components/scanner/binanceApi";
-import { getAccountBalance, placeOrder, getOpenOrders, getUserTrades } from "../components/live-trading/BinanceBrowserApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -51,26 +50,45 @@ export default function LiveTrading() {
     }
   }, [apiKeys, activeKey]);
 
+  // Helper: Sign Binance request
+  const signRequest = useCallback(async (queryString, secret) => {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(queryString);
+    const keyData = encoder.encode(secret);
+    const key = await crypto.subtle.importKey("raw", keyData, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const signature = await crypto.subtle.sign("HMAC", key, data);
+    return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, "0")).join("");
+  }, []);
+
   // Fetch balance from Binance (direct client-side)
   const fetchBalance = useCallback(async () => {
     if (!activeKey || !user) return;
     setLoadingBalance(true);
     try {
-      // Get secret from backend
       const decrypted = await base44.functions.invoke("decryptApiSecret", { keyId: activeKey.id });
       const secret = decrypted.data.secret;
       
-      // Call Binance directly from browser
-      const accountData = await getAccountBalance(activeKey.api_key, secret);
-      const totalWallet = parseFloat(accountData?.totalWalletBalance || 0);
-      const availableBalance = parseFloat(accountData?.availableBalance || 0);
+      const timestamp = Date.now();
+      const queryString = `timestamp=${timestamp}`;
+      const signature = await signRequest(queryString, secret);
+      
+      const response = await fetch(
+        `https://fapi.binance.com/fapi/v2/account?${queryString}&signature=${signature}`,
+        { headers: { "X-MBX-APIKEY": activeKey.api_key } }
+      );
+      
+      if (!response.ok) throw new Error(`API: ${response.statusText}`);
+      
+      const data = await response.json();
+      const availableBalance = parseFloat(data.availableBalance || 0);
+      const totalWallet = parseFloat(data.totalWalletBalance || 0);
       setBalance({ totalWallet, availableBalance });
-      setBotLog(`✅ Balanță actualizată: ${availableBalance.toFixed(2)} USDT`);
+      setBotLog(`✅ Balanță: ${availableBalance.toFixed(2)} USDT`);
     } catch (e) {
-      setBotLog(`❌ Eroare balanță: ${e.message}`);
+      setBotLog(`❌ Eroare: ${e.message}`);
     }
     setLoadingBalance(false);
-  }, [activeKey, user]);
+  }, [activeKey, user, signRequest]);
 
   useEffect(() => {
     if (activeKey) fetchBalance();
@@ -103,19 +121,34 @@ export default function LiveTrading() {
       
       setPlacingOrder(true);
       try {
-        // Get secret from backend
         const decrypted = await base44.functions.invoke("decryptApiSecret", { keyId: activeKey.id });
         const secret = decrypted.data.secret;
         
-        // Place order directly from browser
-        const orderRes = await placeOrder(activeKey.api_key, secret, {
+        const timestamp = Date.now();
+        const params = {
           symbol: orderParams.symbol,
           side: orderParams.side,
           type: "LIMIT",
           timeInForce: "GTC",
           quantity: orderParams.quantity.toString(),
           price: orderParams.price.toString(),
-        });
+          timestamp
+        };
+        
+        const queryString = new URLSearchParams(params).toString();
+        const signature = await signRequest(queryString, secret);
+        
+        const response = await fetch(
+          `https://fapi.binance.com/fapi/v1/order?${queryString}&signature=${signature}`,
+          {
+            method: "POST",
+            headers: { "X-MBX-APIKEY": activeKey.api_key }
+          }
+        );
+        
+        if (!response.ok) throw new Error(`API: ${response.statusText}`);
+        
+        const orderRes = await response.json();
 
         await base44.entities.LiveTrade.create({
           symbol: orderParams.symbol,
@@ -127,11 +160,11 @@ export default function LiveTrading() {
           notes: `Placed at ${new Date().toLocaleString("ro-RO")}`,
         });
 
-        setBotLog(`✅ Ordine plasată: ${orderParams.symbol} ${orderParams.side} ${orderParams.quantity}@${orderParams.price}`);
+        setBotLog(`✅ Ordine: ${orderParams.symbol} ${orderParams.side}`);
         setOrderDialog(false);
         queryClient.invalidateQueries({ queryKey: ["liveTrades"] });
       } catch (e) {
-        setBotLog(`❌ Eroare ordine: ${e.message}`);
+        setBotLog(`❌ Eroare: ${e.message}`);
         throw e;
       } finally {
         setPlacingOrder(false);

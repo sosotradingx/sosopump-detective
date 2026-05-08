@@ -45,11 +45,26 @@ export default function ApiSettings() {
   const testConnection = async (keyRecord) => {
     setTesting(keyRecord.id);
     try {
-      await base44.functions.invoke("binanceApi", {
-        action: "getBalance",
-        keyId: keyRecord.id
-      });
+      // Get secret from backend (secure retrieval)
+      const decrypted = await base44.functions.invoke("decryptApiSecret", { keyId: keyRecord.id });
+      const secret = decrypted.data.secret;
+
+      // Test with direct browser request - Binance API
+      const timestamp = Date.now();
+      const queryString = `timestamp=${timestamp}`;
+      const signature = await signRequest(queryString, secret);
       
+      const response = await fetch(
+        `https://fapi.binance.com/fapi/v2/account?${queryString}&signature=${signature}`,
+        {
+          headers: { "X-MBX-APIKEY": keyRecord.api_key }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Binance API: ${response.statusText} (${response.status})`);
+      }
+
       await base44.entities.UserApiKey.update(keyRecord.id, {
         test_status: "ok",
         test_message: "Conexiune reușită ✓",
@@ -65,6 +80,15 @@ export default function ApiSettings() {
       queryClient.invalidateQueries({ queryKey: ["userApiKeys"] });
     }
     setTesting(null);
+  };
+
+  const signRequest = async (queryString, secret) => {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(queryString);
+    const keyData = encoder.encode(secret);
+    const key = await crypto.subtle.importKey("raw", keyData, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const signature = await crypto.subtle.sign("HMAC", key, data);
+    return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, "0")).join("");
   };
 
   const handleSubmit = (e) => {
