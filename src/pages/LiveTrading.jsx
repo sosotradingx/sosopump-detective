@@ -114,25 +114,35 @@ export default function LiveTrading() {
         { headers: { "X-MBX-APIKEY": activeKey.api_key } }
       );
       
-      if (!response.ok) return;
+      if (!response.ok) {
+        console.error("Binance API error:", response.status, response.statusText);
+        return;
+      }
       
       const orders = await response.json();
-      // Sync open orders to database
-      for (const order of orders) {
-        const exists = trades.find(t => t.binance_order_id === order.orderId?.toString());
-        if (!exists) {
-          await base44.entities.LiveTrade.create({
-            symbol: order.symbol,
-            side: order.side,
-            status: "open",
-            entry_price: parseFloat(order.price),
-            quantity: parseFloat(order.origQty),
-            binance_order_id: order.orderId?.toString(),
-            notes: `Synced from Binance`,
-          });
+      console.log("Binance open orders:", orders);
+      
+      if (orders && orders.length > 0) {
+        // Sync open orders to database
+        for (const order of orders) {
+          const orderId = String(order.orderId);
+          const exists = trades.find(t => String(t.binance_order_id) === orderId);
+          
+          if (!exists) {
+            console.log("Creating trade for order:", orderId);
+            await base44.entities.LiveTrade.create({
+              symbol: order.symbol,
+              side: order.side,
+              status: "open",
+              entry_price: parseFloat(order.price),
+              quantity: parseFloat(order.origQty),
+              binance_order_id: orderId,
+              notes: `Synced from Binance`,
+            });
+          }
         }
+        queryClient.invalidateQueries({ queryKey: ["liveTrades"] });
       }
-      queryClient.invalidateQueries({ queryKey: ["liveTrades"] });
     } catch (e) {
       console.error("Error fetching open orders:", e);
     }
