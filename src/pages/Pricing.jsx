@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Check, Copy, Clock, Crown, Zap, Star, AlertCircle, CheckCircle } from "lucide-react";
 
-const WALLET_ADDRESS = "0xYOUR_USDC_BEP20_WALLET_HERE"; // ← înlocuiește cu adresa ta
+const WALLET_ADDRESS = "0xab4acf043c083201514188c859e710d494caa1f5"; // ← înlocuiește cu adresa ta
 
 const PLANS = [
   {
