@@ -387,12 +387,16 @@ export default function PaperTrading() {
 
   const initialBalance = 10000;
   const totalPnL = closedTrades.reduce((s, t) => s + (t.pnl_usd || 0), 0);
+  // Capital blocat în pozițiile deschise (tradeSize * cantitate la intrare)
+  const lockedCapital = openTrades.reduce((s, t) => s + (t.entry_price * t.quantity), 0);
   const unrealizedPnL = openTrades.reduce((s, t) => {
     const cur = prices[t.symbol] || t.entry_price;
     return s + (cur - t.entry_price) * t.quantity;
   }, 0);
-  // Balanță = capital inițial + profit realizat + profit nerealizat curent
-  const currentBalance = initialBalance + totalPnL + unrealizedPnL;
+  // Balanță disponibilă = capital inițial + profit realizat - capital blocat în poziții deschise
+  const availableBalance = initialBalance + totalPnL - lockedCapital;
+  // Valoare totală portofoliu = disponibil + capital blocat + profit nerealizat
+  const totalPortfolioValue = initialBalance + totalPnL + unrealizedPnL;
   const winRate = closedTrades.length > 0
     ? Math.round((closedTrades.filter(t => (t.pnl_usd || 0) > 0).length / closedTrades.length) * 100)
     : 0;
@@ -496,19 +500,22 @@ export default function PaperTrading() {
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-card border border-border rounded-xl p-4">
-          <p className="text-xs font-mono text-muted-foreground">BALANȚĂ</p>
-          <p className="text-2xl font-bold mt-1">${currentBalance.toFixed(2)}</p>
+          <p className="text-xs font-mono text-muted-foreground">DISPONIBIL</p>
+          <p className="text-2xl font-bold mt-1">${availableBalance.toFixed(2)}</p>
+          <p className="text-[10px] text-muted-foreground mt-1">Total: ${totalPortfolioValue.toFixed(2)}</p>
         </div>
         <div className="bg-card border border-border rounded-xl p-4">
-          <p className="text-xs font-mono text-muted-foreground">P&L TOTAL</p>
+          <p className="text-xs font-mono text-muted-foreground">ÎN POZIȚII</p>
+          <p className="text-2xl font-bold mt-1 text-chart-blue">${lockedCapital.toFixed(2)}</p>
+          <p className="text-[10px] text-muted-foreground mt-1">{openTrades.length} poziții deschise</p>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-4">
+          <p className="text-xs font-mono text-muted-foreground">P&L REALIZAT</p>
           <p className={`text-2xl font-bold mt-1 ${totalPnL >= 0 ? "text-chart-green" : "text-chart-red"}`}>
             {totalPnL >= 0 ? "+" : ""}${totalPnL.toFixed(2)}
           </p>
-        </div>
-        <div className="bg-card border border-border rounded-xl p-4">
-          <p className="text-xs font-mono text-muted-foreground">NEREALIZAT</p>
-          <p className={`text-2xl font-bold mt-1 ${unrealizedPnL >= 0 ? "text-chart-green" : "text-chart-red"}`}>
-            {unrealizedPnL >= 0 ? "+" : ""}${unrealizedPnL.toFixed(2)}
+          <p className={`text-[10px] mt-1 ${unrealizedPnL >= 0 ? "text-chart-green" : "text-chart-red"}`}>
+            Nerealizat: {unrealizedPnL >= 0 ? "+" : ""}${unrealizedPnL.toFixed(2)}
           </p>
         </div>
         <div className="bg-card border border-border rounded-xl p-4">
@@ -516,6 +523,7 @@ export default function PaperTrading() {
           <p className={`text-2xl font-bold mt-1 ${winRate >= 50 ? "text-chart-green" : "text-chart-red"}`}>
             {winRate}%
           </p>
+          <p className="text-[10px] text-muted-foreground mt-1">{closedTrades.length} tranzacții închise</p>
         </div>
       </div>
 
