@@ -88,24 +88,17 @@ export default function LiveTrading() {
     setLoadingBalance(false);
   }, [activeKey, user]);
 
-  // Fetch open orders - disabled due to geolocation restrictions
-  const fetchOpenOrders = useCallback(async () => {
-    setBotLog(`⚠️ Sincronizare Binance indisponibilă din cauza restricțiilor geografice.`);
-  }, []);
-
   useEffect(() => {
     if (activeKey) {
       fetchBalance();
-      fetchOpenOrders();
     }
     const interval = setInterval(() => {
       if (activeKey) {
         fetchBalance();
-        fetchOpenOrders();
       }
     }, 10000);
     return () => clearInterval(interval);
-  }, [activeKey, fetchBalance, fetchOpenOrders]);
+  }, [activeKey, fetchBalance]);
 
   // Load market prices
   const loadPrices = useCallback(async () => {
