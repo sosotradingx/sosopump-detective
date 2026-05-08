@@ -104,12 +104,28 @@ export default function PaperTrading() {
   });
 
   const loadPrices = useCallback(async () => {
-    const pairs = await fetchTopPairs("USDT", 50, 100000);
+    const pairs = await fetchTopPairs("USDT", 200, 0);
     const priceMap = {};
     pairs.forEach(p => { priceMap[p.symbol] = p.price; });
+
+    // Fetch prices for open trade symbols not in the top list
+    const openSymbols = trades
+      .filter(t => t.status === "open" && !priceMap[t.symbol])
+      .map(t => t.symbol);
+
+    if (openSymbols.length > 0) {
+      await Promise.all(openSymbols.map(async (sym) => {
+        try {
+          const r = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${sym}`);
+          const d = await r.json();
+          if (d.price) priceMap[sym] = parseFloat(d.price);
+        } catch {}
+      }));
+    }
+
     setPrices(priceMap);
     return pairs;
-  }, []);
+  }, [trades]);
 
   useEffect(() => {
     loadPrices();
