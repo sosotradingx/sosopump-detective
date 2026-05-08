@@ -13,28 +13,7 @@ async function hmacSha256(message, secret) {
     .join('');
 }
 
-async function getTickerPrice(symbol) {
-  const response = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${symbol}`);
-  if (!response.ok) throw new Error(`Binance ticker error: ${response.statusText}`);
-  return response.json();
-}
 
-async function placeOrder(apiKey, apiSecret, params) {
-  const timestamp = Date.now();
-  const queryString = new URLSearchParams({ ...params, timestamp }).toString();
-  const signature = await hmacSha256(queryString, apiSecret);
-  
-  const response = await fetch(`https://fapi.binance.com/fapi/v1/order?${queryString}&signature=${signature}`, {
-    method: 'POST',
-    headers: { 'X-MBX-APIKEY': apiKey }
-  });
-  
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(`Binance: ${error.msg || response.statusText}`);
-  }
-  return response.json();
-}
 
 Deno.serve(async (req) => {
   try {
@@ -68,16 +47,17 @@ Deno.serve(async (req) => {
     }
 
     const apiKey = apiKeys[0];
-    const decrypted = await base44.functions.invoke('decryptApiSecret', { keyId: apiKey.id });
-    const apiSecret = decrypted.data.secret;
-
     const closedTrades = [];
 
     // Monitor each open trade
     for (const trade of openTrades) {
       try {
         // Get current price
-        const ticker = await getTickerPrice(trade.symbol);
+        const ticker = await base44.functions.invoke('binanceApi', {
+          action: 'getTickerPrice',
+          keyId: apiKey.id,
+          params: { symbol: trade.symbol }
+        });
         const currentPrice = parseFloat(ticker.price);
 
         let shouldClose = false;
@@ -124,11 +104,15 @@ Deno.serve(async (req) => {
         if (shouldClose && trade.binance_order_id) {
           // Place market close order
           try {
-            await placeOrder(apiKey.api_key, apiSecret, {
-              symbol: trade.symbol,
-              side: trade.side === 'BUY' ? 'SELL' : 'BUY',
-              type: 'MARKET',
-              quantity: trade.quantity.toString()
+            await base44.functions.invoke('binanceApi', {
+              action: 'placeOrder',
+              keyId: apiKey.id,
+              params: {
+                symbol: trade.symbol,
+                side: trade.side === 'BUY' ? 'SELL' : 'BUY',
+                type: 'MARKET',
+                quantity: trade.quantity.toString()
+              }
             });
 
             // Update trade record

@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Zap, TrendingUp, TrendingDown, RefreshCw, AlertTriangle, DollarSign, Activity, Loader2, X } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
 import PlanGate from "@/components/PlanGate";
-import { getAccountBalance, placeOrder, cancelOrder, getOpenOrders } from "@/components/live-trading/BinanceBrowserApi";
+
 
 export default function LiveTrading() {
   const { isPro, loading: subLoading } = useSubscription();
@@ -55,16 +55,16 @@ export default function LiveTrading() {
     if (!activeKey || !user) return;
     setLoadingBalance(true);
     try {
-      // Decrypt API secret from backend and fetch balance
-      const decrypted = await base44.functions.invoke("decryptApiSecret", { keyId: activeKey.id });
-      const accountData = await getAccountBalance(activeKey.api_key, decrypted.data.secret);
+      const accountData = await base44.functions.invoke("binanceApi", { 
+        action: "getBalance",
+        keyId: activeKey.id 
+      });
       
       const totalWallet = accountData.totalWalletBalance ? parseFloat(accountData.totalWalletBalance) : 0;
       const availableBalance = accountData.availableBalance ? parseFloat(accountData.availableBalance) : 0;
       
       setBalance({ totalWallet, availableBalance });
       
-      // Log to database
       await base44.entities.LiveTrade.create({
         symbol: "BALANCE_CHECK",
         side: "BUY",
@@ -93,19 +93,19 @@ export default function LiveTrading() {
       
       setPlacingOrder(true);
       try {
-        // Decrypt API secret
-        const decrypted = await base44.functions.invoke("decryptApiSecret", { keyId: activeKey.id });
-        
-        const orderRes = await placeOrder(activeKey.api_key, decrypted.data.secret, {
-          symbol: orderParams.symbol,
-          side: orderParams.side,
-          type: "LIMIT",
-          timeInForce: "GTC",
-          quantity: orderParams.quantity.toString(),
-          price: orderParams.price.toString(),
+        const orderRes = await base44.functions.invoke("binanceApi", {
+          action: "placeOrder",
+          keyId: activeKey.id,
+          params: {
+            symbol: orderParams.symbol,
+            side: orderParams.side,
+            type: "LIMIT",
+            timeInForce: "GTC",
+            quantity: orderParams.quantity.toString(),
+            price: orderParams.price.toString(),
+          }
         });
 
-        // Log trade to database
         await base44.entities.LiveTrade.create({
           symbol: orderParams.symbol,
           side: orderParams.side,
@@ -113,7 +113,7 @@ export default function LiveTrading() {
           entry_price: orderParams.price,
           quantity: orderParams.quantity,
           binance_order_id: orderRes.orderId,
-          notes: `Placed via browser at ${new Date().toLocaleString("ro-RO")}`,
+          notes: `Placed via backend at ${new Date().toLocaleString("ro-RO")}`,
         });
 
         setBotLog(`✅ Ordine plasată: ${orderParams.symbol} ${orderParams.side} ${orderParams.quantity}@${orderParams.price}`);
