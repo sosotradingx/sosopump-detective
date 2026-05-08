@@ -69,9 +69,13 @@ export default function PaperTrading() {
   // Keep ref in sync with state
   useEffect(() => { autoConfigRef.current = autoConfig; }, [autoConfig]);
 
+  const [user, setUser] = useState(null);
+  useEffect(() => { base44.auth.me().then(setUser).catch(() => {}); }, []);
+
   const { data: trades = [], isLoading } = useQuery({
-    queryKey: ["paper-trades"],
-    queryFn: () => base44.entities.PaperTrade.list("-created_date", 100),
+    queryKey: ["paper-trades", user?.email],
+    queryFn: () => base44.entities.PaperTrade.filter({ created_by: user.email }, "-created_date", 100),
+    enabled: !!user,
   });
 
   const createTrade = useMutation({

@@ -25,15 +25,20 @@ export default function LiveTrading() {
   const [botLog, setBotLog] = useState("");
   const [runningBot, setRunningBot] = useState(false);
 
+  const [user, setUser] = useState(null);
+  useEffect(() => { base44.auth.me().then(setUser).catch(() => {}); }, []);
+
   const { data: trades = [] } = useQuery({
-    queryKey: ["liveTrades"],
-    queryFn: () => base44.entities.LiveTrade.list("-created_date", 50),
+    queryKey: ["liveTrades", user?.email],
+    queryFn: () => base44.entities.LiveTrade.filter({ created_by: user.email }, "-created_date", 50),
     refetchInterval: 15000,
+    enabled: !!user,
   });
 
   const { data: apiKeys = [] } = useQuery({
-    queryKey: ["userApiKeys"],
-    queryFn: () => base44.entities.UserApiKey.filter({ is_active: true }),
+    queryKey: ["userApiKeys", user?.email],
+    queryFn: () => base44.entities.UserApiKey.filter({ created_by: user.email, is_active: true }),
+    enabled: !!user,
   });
 
   const hasKey = apiKeys.length > 0;

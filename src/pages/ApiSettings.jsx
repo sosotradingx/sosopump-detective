@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -15,9 +15,13 @@ export default function ApiSettings() {
   const [testing, setTesting] = useState(null);
   const [form, setForm] = useState({ api_key: "", api_secret: "", market_type: "futures", label: "" });
 
+  const [user, setUser] = React.useState(null);
+  React.useEffect(() => { base44.auth.me().then(setUser).catch(() => {}); }, []);
+
   const { data: keys = [], isLoading } = useQuery({
-    queryKey: ["userApiKeys"],
-    queryFn: () => base44.entities.UserApiKey.list("-created_date"),
+    queryKey: ["userApiKeys", user?.email],
+    queryFn: () => base44.entities.UserApiKey.filter({ created_by: user.email }, "-created_date"),
+    enabled: !!user,
   });
 
   const createMutation = useMutation({
