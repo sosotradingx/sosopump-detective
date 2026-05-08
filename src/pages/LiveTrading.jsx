@@ -98,28 +98,16 @@ export default function LiveTrading() {
     setLoadingBalance(false);
   }, [activeKey, user, signRequest]);
 
-  // Fetch open orders from Binance
+  // Fetch open orders from Binance via backend function
   const fetchOpenOrders = useCallback(async () => {
     if (!activeKey || !user) return;
     try {
-      const decrypted = await base44.functions.invoke("decryptApiSecret", { keyId: activeKey.id });
-      const secret = decrypted.data.secret;
+      const result = await base44.functions.invoke("binanceApi", {
+        action: "getOpenOrders",
+        keyId: activeKey.id,
+      });
       
-      const timestamp = Date.now();
-      const queryString = `timestamp=${timestamp}`;
-      const signature = await signRequest(queryString, secret);
-      
-      const response = await fetch(
-        `https://fapi.binance.com/fapi/v1/openOrders?${queryString}&signature=${signature}`,
-        { headers: { "X-MBX-APIKEY": activeKey.api_key } }
-      );
-      
-      if (!response.ok) {
-        console.error("Binance API error:", response.status, response.statusText);
-        return;
-      }
-      
-      const orders = await response.json();
+      const orders = result.data.orders || [];
       console.log("Binance open orders:", orders);
       
       if (orders && orders.length > 0) {
@@ -146,7 +134,7 @@ export default function LiveTrading() {
     } catch (e) {
       console.error("Error fetching open orders:", e);
     }
-  }, [activeKey, user, signRequest, trades, queryClient]);
+  }, [activeKey, user, trades, queryClient]);
 
   useEffect(() => {
     if (activeKey) {
