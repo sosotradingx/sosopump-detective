@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getAccountBalance } from "@/components/live-trading/BinanceBrowserApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,12 +45,10 @@ export default function ApiSettings() {
   const testConnection = async (keyRecord) => {
     setTesting(keyRecord.id);
     try {
-      // Get secret from backend
-      const decrypted = await base44.functions.invoke("decryptApiSecret", { keyId: keyRecord.id });
-      const secret = decrypted.data.secret;
-      
-      // Test balance call directly from browser
-      await getAccountBalance(keyRecord.api_key, secret);
+      await base44.functions.invoke("binanceApi", {
+        action: "getBalance",
+        keyId: keyRecord.id
+      });
       
       await base44.entities.UserApiKey.update(keyRecord.id, {
         test_status: "ok",
