@@ -104,14 +104,15 @@ Deno.serve(async (req) => {
         errorMsg = errorText;
       }
       return Response.json({ 
+        success: false,
         error: errorMsg,
         binanceStatus: response.status,
         action: action
-      }, { status: 400 });
+      });
     }
 
     const data = await response.json();
-    return Response.json(data);
+    return Response.json({ success: true, data });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }

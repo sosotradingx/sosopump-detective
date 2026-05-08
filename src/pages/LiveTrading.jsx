@@ -119,14 +119,13 @@ export default function LiveTrading() {
         params: {},
       });
       
-      if (result.data.error) {
-        const msg = result.data.error;
-        console.error("Binance API error:", msg);
-        setBotLog(`❌ ${msg}`);
+      if (!result.data.success && result.data.error) {
+        console.error("Binance API error:", result.data.error);
+        setBotLog(`❌ ${result.data.error}`);
         return;
       }
       
-      const orders = Array.isArray(result.data) ? result.data : [];
+      const orders = Array.isArray(result.data.data) ? result.data.data : [];
       console.log("Binance open orders:", orders);
       
       if (orders.length === 0) {
