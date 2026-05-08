@@ -1,12 +1,17 @@
 import React from "react";
-import { X, Settings } from "lucide-react";
+import { X, Settings, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useSubscription } from "@/hooks/useSubscription";
 
 export default function ScannerSettings({ settings, onChange, onClose }) {
-  const set = (key, val) => onChange({ ...settings, [key]: val });
+  const { isFree } = useSubscription();
+  const set = (key, val) => {
+    if (key === "maxPairs" && isFree && Number(val) > 50) return;
+    onChange({ ...settings, [key]: val });
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-end bg-black/50 backdrop-blur-sm" onClick={onClose}>
@@ -66,14 +71,25 @@ export default function ScannerSettings({ settings, onChange, onClose }) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="50">Top 50</SelectItem>
-                <SelectItem value="100">Top 100</SelectItem>
-                <SelectItem value="200">Top 200</SelectItem>
-                <SelectItem value="300">Top 300</SelectItem>
-                <SelectItem value="500">Top 500</SelectItem>
-                <SelectItem value="0">Toate (~600)</SelectItem>
+                <SelectItem value="100" disabled={isFree}>
+                  <span className="flex items-center gap-2">Top 100 {isFree && <Lock className="w-3 h-3 opacity-50" />}</span>
+                </SelectItem>
+                <SelectItem value="200" disabled={isFree}>
+                  <span className="flex items-center gap-2">Top 200 {isFree && <Lock className="w-3 h-3 opacity-50" />}</span>
+                </SelectItem>
+                <SelectItem value="300" disabled={isFree}>
+                  <span className="flex items-center gap-2">Top 300 {isFree && <Lock className="w-3 h-3 opacity-50" />}</span>
+                </SelectItem>
+                <SelectItem value="500" disabled={isFree}>
+                  <span className="flex items-center gap-2">Top 500 {isFree && <Lock className="w-3 h-3 opacity-50" />}</span>
+                </SelectItem>
+                <SelectItem value="0" disabled={isFree}>
+                  <span className="flex items-center gap-2">Toate (~600) {isFree && <Lock className="w-3 h-3 opacity-50" />}</span>
+                </SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground mt-1">Sortate după volum 24h descrescător. Batch-uri de 25 cu pauze safe.</p>
+            {isFree && <p className="text-xs text-primary mt-1">⬆️ Upgrade la PRO pentru mai multe perechi.</p>}
+            {!isFree && <p className="text-xs text-muted-foreground mt-1">Sortate după volum 24h descrescător. Batch-uri de 25 cu pauze safe.</p>}
           </section>
 
           {/* Indicators */}
