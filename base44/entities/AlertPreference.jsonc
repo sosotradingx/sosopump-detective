@@ -1,0 +1,52 @@
+{
+  "name": "AlertPreference",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "Email-ul utilizatorului"
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Alertele sunt active"
+    },
+    "min_score": {
+      "type": "number",
+      "default": 70,
+      "description": "Scorul minim pentru a trimite alert\u0103"
+    },
+    "pump_statuses": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [
+        "STRONG",
+        "ACTIVE"
+      ],
+      "description": "Statusurile de pump care declan\u0219eaz\u0103 alerta"
+    },
+    "max_alerts_per_hour": {
+      "type": "number",
+      "default": 5,
+      "description": "Num\u0103rul maxim de alerte pe or\u0103"
+    },
+    "last_alert_sent_at": {
+      "type": "string",
+      "description": "Timestamp-ul ultimei alerte trimise"
+    },
+    "alerts_sent_this_hour": {
+      "type": "number",
+      "default": 0,
+      "description": "Alerte trimise \u00een ora curent\u0103"
+    },
+    "hour_window_start": {
+      "type": "string",
+      "description": "\u00cenceputul ferestrei orare curente"
+    }
+  },
+  "required": [
+    "user_email"
+  ]
+}

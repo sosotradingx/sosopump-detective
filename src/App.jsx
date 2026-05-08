@@ -11,6 +11,7 @@ import LiveTrading from './pages/LiveTrading.jsx';
 import ApiSettings from './pages/ApiSettings.jsx';
 import Pricing from './pages/Pricing.jsx';
 import AdminSubscriptions from './pages/AdminSubscriptions.jsx';
+import AlertSettings from './pages/AlertSettings.jsx';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 
@@ -71,6 +72,7 @@ const AuthenticatedApp = () => {
       <Route path="/ApiSettings" element={<LayoutWrapper currentPageName="ApiSettings"><ApiSettings /></LayoutWrapper>} />
       <Route path="/Pricing" element={<LayoutWrapper currentPageName="Pricing"><Pricing /></LayoutWrapper>} />
       <Route path="/AdminSubscriptions" element={<LayoutWrapper currentPageName="AdminSubscriptions"><AdminSubscriptions /></LayoutWrapper>} />
+      <Route path="/AlertSettings" element={<LayoutWrapper currentPageName="AlertSettings"><AlertSettings /></LayoutWrapper>} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
   Search, Activity, LineChart, Wallet, Settings, Menu, X,
-  LayoutGrid, BarChart2, FlaskConical, Zap, Key, Crown, LogOut, Lock
+  LayoutGrid, BarChart2, FlaskConical, Zap, Key, Crown, LogOut, Lock, Bell
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { base44 } from "@/api/base44Client";
@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { name: "Backtesting", icon: FlaskConical, page: "Backtest" },
   { name: "Live Trading", icon: Zap, page: "LiveTrading" },
   { name: "API Keys", icon: Key, page: "ApiSettings" },
+  { name: "Alerte Email", icon: Bell, page: "AlertSettings" },
   { name: "Upgrade Plan", icon: Crown, page: "Pricing" },
   { name: "Configurare", icon: Settings, page: "Config" },
 ];
