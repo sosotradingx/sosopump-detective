@@ -7,29 +7,42 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Zap, TrendingUp, TrendingDown, RefreshCw, AlertTriangle, DollarSign, Activity } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Zap, TrendingUp, TrendingDown, RefreshCw, AlertTriangle, DollarSign, Activity, Loader2, X } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
 import PlanGate from "@/components/PlanGate";
+import { getAccountBalance, placeOrder, cancelOrder, getOpenOrders } from "@/components/live-trading/BinanceBrowserApi";
 
 export default function LiveTrading() {
   const { isPro, loading: subLoading } = useSubscription();
   const queryClient = useQueryClient();
-  const [botEnabled, setBotEnabled] = useState(false);
-  const [config, setConfig] = useState({
-    tradeSize: 50,
-    minScore: 60,
-    stopLossPct: 5,
-    takeProfitPct: 20,
-    maxOpenTrades: 3,
-    timeframe: "1h",
-  });
+  const [user, setUser] = useState(null);
   const [balance, setBalance] = useState(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
   const [botLog, setBotLog] = useState("");
-  const [runningBot, setRunningBot] = useState(false);
+  const [activeKey, setActiveKey] = useState(null);
+  const [orderDialog, setOrderDialog] = useState(false);
+  const [orderParams, setOrderParams] = useState({
+    symbol: "BTCUSDT",
+    side: "BUY",
+    quantity: 0.01,
+    price: 0,
+  });
+  const [placingOrder, setPlacingOrder] = useState(false);
 
-  const [user, setUser] = useState(null);
-  useEffect(() => { base44.auth.me().then(setUser).catch(() => {}); }, []);
+  useEffect(() => {
+    base44.auth.me().then(setUser).catch(() => {});
+  }, []);
+
+  const { data: apiKeys = [] } = useQuery({
+    queryKey: ["userApiKeys", user?.email],
+    queryFn: () => base44.entities.UserApiKey.filter({ created_by: user.email, is_active: true }),
+    enabled: !!user,
+  });
+
+  useEffect(() => {
+    if (apiKeys.length > 0) setActiveKey(apiKeys[0]);
+  }, [apiKeys]);
 
   const { data: trades = [] } = useQuery({
     queryKey: ["liveTrades", user?.email],
@@ -38,58 +51,87 @@ export default function LiveTrading() {
     enabled: !!user,
   });
 
-  const { data: apiKeys = [] } = useQuery({
-    queryKey: ["userApiKeys", user?.email],
-    queryFn: () => base44.entities.UserApiKey.filter({ created_by: user.email, is_active: true }),
-    enabled: !!user,
-  });
-
-  const hasKey = apiKeys.length > 0;
-  const activeKey = apiKeys[0];
-
-  const fetchBalance = async () => {
-    if (!hasKey) return;
+  const fetchBalance = useCallback(async () => {
+    if (!activeKey || !user) return;
     setLoadingBalance(true);
     try {
-      const res = await base44.functions.invoke("binanceLiveTrade", {
-        action: "balance",
-        market_type: activeKey.market_type || "futures",
+      // Decrypt API secret from backend and fetch balance
+      const decrypted = await base44.functions.invoke("decryptApiSecret", { keyId: activeKey.id });
+      const accountData = await getAccountBalance(activeKey.api_key, decrypted.data.secret);
+      
+      const totalWallet = accountData.totalWalletBalance ? parseFloat(accountData.totalWalletBalance) : 0;
+      const availableBalance = accountData.availableBalance ? parseFloat(accountData.availableBalance) : 0;
+      
+      setBalance({ totalWallet, availableBalance });
+      
+      // Log to database
+      await base44.entities.LiveTrade.create({
+        symbol: "BALANCE_CHECK",
+        side: "BUY",
+        status: "closed",
+        entry_price: availableBalance,
+        exit_price: totalWallet,
+        quantity: 1,
+        notes: `Balance check at ${new Date().toLocaleString("ro-RO")}`,
       });
-      setBalance(res.data);
     } catch (e) {
-      console.error(e);
+      console.error("Balance fetch error:", e);
+      setBotLog(`❌ Balance error: ${e.message}`);
     }
     setLoadingBalance(false);
-  };
+  }, [activeKey, user]);
 
   useEffect(() => {
-    if (hasKey) fetchBalance();
-  }, [hasKey]);
+    if (activeKey) fetchBalance();
+    const interval = setInterval(() => fetchBalance(), 30000);
+    return () => clearInterval(interval);
+  }, [activeKey, fetchBalance]);
 
-  const runBot = async () => {
-    setRunningBot(true);
-    setBotLog("Se rulează scanarea...");
-    try {
-      const res = await base44.functions.invoke("liveAutoBot", {
-        ...config,
-        enabled: true,
-      });
-      setBotLog(res.data?.log || "Scanare completă.");
-      queryClient.invalidateQueries({ queryKey: ["liveTrades"] });
-    } catch (e) {
-      setBotLog("Eroare: " + e.message);
-    }
-    setRunningBot(false);
-  };
+  const placeOrderMutation = useMutation({
+    mutationFn: async () => {
+      if (!activeKey || !user) throw new Error("No API key");
+      
+      setPlacingOrder(true);
+      try {
+        // Decrypt API secret
+        const decrypted = await base44.functions.invoke("decryptApiSecret", { keyId: activeKey.id });
+        
+        const orderRes = await placeOrder(activeKey.api_key, decrypted.data.secret, {
+          symbol: orderParams.symbol,
+          side: orderParams.side,
+          type: "LIMIT",
+          timeInForce: "GTC",
+          quantity: orderParams.quantity.toString(),
+          price: orderParams.price.toString(),
+        });
+
+        // Log trade to database
+        await base44.entities.LiveTrade.create({
+          symbol: orderParams.symbol,
+          side: orderParams.side,
+          status: "open",
+          entry_price: orderParams.price,
+          quantity: orderParams.quantity,
+          binance_order_id: orderRes.orderId,
+          notes: `Placed via browser at ${new Date().toLocaleString("ro-RO")}`,
+        });
+
+        setBotLog(`✅ Ordine plasată: ${orderParams.symbol} ${orderParams.side} ${orderParams.quantity}@${orderParams.price}`);
+        setOrderDialog(false);
+        queryClient.invalidateQueries({ queryKey: ["liveTrades"] });
+      } catch (e) {
+        setBotLog(`❌ Eroare ordine: ${e.message}`);
+      }
+      setPlacingOrder(false);
+    },
+  });
 
   const openTrades = trades.filter(t => t.status === "open");
   const closedTrades = trades.filter(t => t.status === "closed");
   const totalPnl = closedTrades.reduce((s, t) => s + (t.pnl_usd || 0), 0);
 
-  const set = (k, v) => setConfig(prev => ({ ...prev, [k]: v }));
-
   if (!subLoading && !isPro) {
-    return <PlanGate requiredPlan="elite" feature="Live Trading" />;
+    return <PlanGate requiredPlan="pro" feature="Live Trading" />;
   }
 
   return (
@@ -100,17 +142,17 @@ export default function LiveTrading() {
           <Zap className="w-6 h-6 text-primary" />
           <div>
             <h1 className="text-2xl font-bold">⚡ Live Trading</h1>
-            <p className="text-sm text-muted-foreground">Tranzacții reale pe Binance</p>
+            <p className="text-sm text-muted-foreground">Tranzacții reale pe Binance (din browser)</p>
           </div>
         </div>
-        {!hasKey && (
+        {!activeKey && (
           <Badge variant="destructive" className="flex items-center gap-1">
             <AlertTriangle className="w-3 h-3" /> Lipsă API Key
           </Badge>
         )}
       </div>
 
-      {!hasKey && (
+      {!activeKey && (
         <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4 text-sm text-destructive">
           ⚠️ Nu ai nicio cheie API activă. Mergi la <strong>API Keys</strong> pentru a adăuga una.
         </div>
@@ -123,17 +165,17 @@ export default function LiveTrading() {
           <div className="bg-card border border-border rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
               <p className="text-xs font-mono text-muted-foreground uppercase">Balanță Binance</p>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={fetchBalance} disabled={loadingBalance || !hasKey}>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={fetchBalance} disabled={loadingBalance || !activeKey}>
                 <RefreshCw className={`w-3 h-3 ${loadingBalance ? "animate-spin" : ""}`} />
               </Button>
             </div>
             {balance ? (
               <div className="space-y-1">
-                <p className="text-2xl font-bold font-mono">${parseFloat(balance.availableBalance || balance.balance || 0).toFixed(2)}</p>
-                <p className="text-xs text-muted-foreground">disponibil · {activeKey?.market_type || "futures"}</p>
+                <p className="text-2xl font-bold font-mono">${balance.availableBalance?.toFixed(2)}</p>
+                <p className="text-xs text-muted-foreground">disponibil · Total: ${balance.totalWallet?.toFixed(2)}</p>
               </div>
             ) : (
-              <p className="text-muted-foreground text-sm">{hasKey ? "Se încarcă..." : "—"}</p>
+              <p className="text-muted-foreground text-sm">{activeKey ? "Se încarcă..." : "—"}</p>
             )}
           </div>
 
@@ -155,58 +197,56 @@ export default function LiveTrading() {
             </div>
           </div>
 
-          {/* Bot Config */}
-          <div className="bg-card border border-border rounded-xl p-4 space-y-3">
-            <p className="text-xs font-mono text-muted-foreground uppercase">⚙️ Configurare Bot</p>
+          {/* Place Order */}
+          <Dialog open={orderDialog} onOpenChange={setOrderDialog}>
+            <DialogTrigger asChild>
+              <Button className="w-full bg-primary hover:bg-primary/90">
+                <Zap className="w-4 h-4 mr-2" /> Plasează Ordine
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="bg-card border-border">
+              <DialogHeader>
+                <DialogTitle>Ordine Nouă</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 pt-4">
+                <div>
+                  <Label>Pereche</Label>
+                  <Input type="text" value={orderParams.symbol} onChange={e => setOrderParams({...orderParams, symbol: e.target.value.toUpperCase()})} placeholder="BTCUSDT" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Side</Label>
+                    <Select value={orderParams.side} onValueChange={v => setOrderParams({...orderParams, side: v})}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="BUY">BUY</SelectItem>
+                        <SelectItem value="SELL">SELL</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Cantitate</Label>
+                    <Input type="number" step="0.001" value={orderParams.quantity} onChange={e => setOrderParams({...orderParams, quantity: parseFloat(e.target.value) || 0})} />
+                  </div>
+                </div>
+                <div>
+                  <Label>Preț Limit</Label>
+                  <Input type="number" step="0.01" value={orderParams.price} onChange={e => setOrderParams({...orderParams, price: parseFloat(e.target.value) || 0})} />
+                </div>
+                <Button onClick={() => placeOrderMutation.mutate()} disabled={placingOrder || !activeKey} className="w-full bg-pump-strong hover:bg-pump-strong/90">
+                  {placingOrder ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Zap className="w-4 h-4 mr-2" />}
+                  Plasează
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs text-muted-foreground">Mărime Trade $</Label>
-                <Input type="number" min="10" value={config.tradeSize}
-                  onChange={e => set("tradeSize", Number(e.target.value))} className="bg-secondary mt-1" />
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground">Scor Minim</Label>
-                <Input type="number" min="30" max="100" value={config.minScore}
-                  onChange={e => set("minScore", Number(e.target.value))} className="bg-secondary mt-1" />
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground">Stop Loss %</Label>
-                <Input type="number" min="0.5" step="0.5" value={config.stopLossPct}
-                  onChange={e => set("stopLossPct", Number(e.target.value))} className="bg-secondary mt-1" />
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground">Take Profit %</Label>
-                <Input type="number" min="1" step="1" value={config.takeProfitPct}
-                  onChange={e => set("takeProfitPct", Number(e.target.value))} className="bg-secondary mt-1" />
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground">Max Trades</Label>
-                <Input type="number" min="1" max="20" value={config.maxOpenTrades}
-                  onChange={e => set("maxOpenTrades", Number(e.target.value))} className="bg-secondary mt-1" />
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground">Timeframe</Label>
-                <Select value={config.timeframe} onValueChange={v => set("timeframe", v)}>
-                  <SelectTrigger className="bg-secondary mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {["15m","30m","1h","4h"].map(tf => <SelectItem key={tf} value={tf}>{tf}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+          {/* Log */}
+          {botLog && (
+            <div className="bg-secondary/50 rounded-lg p-3 text-xs font-mono text-muted-foreground whitespace-pre-wrap max-h-40 overflow-y-auto">
+              {botLog}
             </div>
-
-            <Button className="w-full bg-primary" onClick={runBot} disabled={runningBot || !hasKey}>
-              {runningBot ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Zap className="w-4 h-4 mr-2" />}
-              {runningBot ? "Scanează..." : "Rulează Bot O Dată"}
-            </Button>
-
-            {botLog && (
-              <div className="bg-secondary/50 rounded-lg p-3 text-xs font-mono text-muted-foreground whitespace-pre-wrap max-h-32 overflow-y-auto">
-                {botLog}
-              </div>
-            )}
-          </div>
+          )}
         </div>
 
         {/* Trades Panel */}
@@ -227,9 +267,6 @@ export default function LiveTrading() {
                     <th className="text-center p-3">Side</th>
                     <th className="text-right p-3">Intrare $</th>
                     <th className="text-right p-3">Qty</th>
-                    <th className="text-right p-3">SL</th>
-                    <th className="text-right p-3">TP</th>
-                    <th className="text-center p-3">Score</th>
                   </tr></thead>
                   <tbody>
                     {openTrades.map(t => (
@@ -240,11 +277,6 @@ export default function LiveTrading() {
                         </td>
                         <td className="p-3 text-right font-mono">${t.entry_price?.toFixed(4)}</td>
                         <td className="p-3 text-right font-mono">{t.quantity}</td>
-                        <td className="p-3 text-right font-mono text-chart-red">${t.stop_loss?.toFixed(4)}</td>
-                        <td className="p-3 text-right font-mono text-chart-green">${t.take_profit?.toFixed(4)}</td>
-                        <td className="p-3 text-center">
-                          <span className="text-pump-active font-bold">{t.pump_score_at_entry || "—"}</span>
-                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -268,21 +300,15 @@ export default function LiveTrading() {
                     <th className="text-left p-3">Pereche</th>
                     <th className="text-right p-3">Intrare</th>
                     <th className="text-right p-3">Ieșire</th>
-                    <th className="text-center p-3">Motiv</th>
                     <th className="text-right p-3">P&L %</th>
                     <th className="text-right p-3">P&L $</th>
                   </tr></thead>
                   <tbody>
-                    {closedTrades.map(t => (
+                    {closedTrades.slice(0, 30).map(t => (
                       <tr key={t.id} className="border-b border-border/40 hover:bg-accent/20">
                         <td className="p-3 font-mono font-bold">{t.symbol}</td>
-                        <td className="p-3 text-right font-mono">${t.entry_price?.toFixed(4)}</td>
-                        <td className="p-3 text-right font-mono">${t.exit_price?.toFixed(4)}</td>
-                        <td className="p-3 text-center">
-                          <Badge variant="outline" className="text-[9px]">
-                            {t.exit_reason === "take_profit" ? "✅ TP" : t.exit_reason === "stop_loss" ? "❌ SL" : t.exit_reason || "—"}
-                          </Badge>
-                        </td>
+                        <td className="p-3 text-right font-mono">${t.entry_price?.toFixed(4) || "—"}</td>
+                        <td className="p-3 text-right font-mono">${t.exit_price?.toFixed(4) || "—"}</td>
                         <td className={`p-3 text-right font-mono font-bold ${(t.pnl_percent || 0) >= 0 ? "text-chart-green" : "text-chart-red"}`}>
                           {(t.pnl_percent || 0) >= 0 ? "+" : ""}{(t.pnl_percent || 0).toFixed(2)}%
                         </td>
