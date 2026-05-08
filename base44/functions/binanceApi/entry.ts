@@ -77,10 +77,10 @@ Deno.serve(async (req) => {
         break;
 
       case 'getOpenOrders':
-        queryString = new URLSearchParams({ 
-          symbol: params.symbol || '',
-          timestamp: Date.now().toString() 
-        }).toString();
+        const tsOpenOrders = Date.now().toString();
+        const baseQuery = { timestamp: tsOpenOrders };
+        if (params.symbol) baseQuery.symbol = params.symbol;
+        queryString = new URLSearchParams(baseQuery).toString();
         url = `https://fapi.binance.com/fapi/v1/openOrders?${queryString}&signature=${await hmacSha256(queryString, apiSecret)}`;
         break;
 

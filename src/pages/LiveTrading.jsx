@@ -120,31 +120,35 @@ export default function LiveTrading() {
       });
       
       const orders = Array.isArray(result.data) ? result.data : [];
-      console.log("Binance open orders:", orders);
+      console.log("Binance open orders:", orders, "Status:", result.status);
       
-      if (orders && orders.length > 0) {
-        // Sync open orders to database
-        for (const order of orders) {
-          const orderId = String(order.orderId);
-          const exists = trades.find(t => String(t.binance_order_id) === orderId);
-          
-          if (!exists) {
-            console.log("Creating trade for order:", orderId);
-            await base44.entities.LiveTrade.create({
-              symbol: order.symbol,
-              side: order.side,
-              status: "open",
-              entry_price: parseFloat(order.price),
-              quantity: parseFloat(order.origQty),
-              binance_order_id: orderId,
-              notes: `Synced from Binance`,
-            });
-          }
-        }
-        refetchTrades();
+      if (orders.length === 0) {
+        console.log("No open orders on Binance");
+        return;
       }
+      
+      // Sync open orders to database
+      for (const order of orders) {
+        const orderId = String(order.orderId);
+        const exists = trades.find(t => String(t.binance_order_id) === orderId);
+        
+        if (!exists) {
+          console.log("Creating trade for order:", orderId, order);
+          await base44.entities.LiveTrade.create({
+            symbol: order.symbol,
+            side: order.side,
+            status: "open",
+            entry_price: parseFloat(order.price),
+            quantity: parseFloat(order.origQty),
+            binance_order_id: orderId,
+            notes: `Synced from Binance`,
+          });
+        }
+      }
+      refetchTrades();
     } catch (e) {
       console.error("Error fetching open orders:", e);
+      setBotLog(`❌ Eroare preluare ordine: ${e.message}`);
     }
   }, [activeKey, user, trades, refetchTrades]);
 
