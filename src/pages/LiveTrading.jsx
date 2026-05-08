@@ -105,9 +105,10 @@ export default function LiveTrading() {
       const result = await base44.functions.invoke("binanceApi", {
         action: "getOpenOrders",
         keyId: activeKey.id,
+        params: {},
       });
       
-      const orders = result.data.orders || [];
+      const orders = Array.isArray(result.data) ? result.data : [];
       console.log("Binance open orders:", orders);
       
       if (orders && orders.length > 0) {
