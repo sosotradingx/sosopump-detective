@@ -224,18 +224,39 @@ export default function PaperTrading() {
       }
 
       if (reason) {
-        const pnlUsd = (cur - trade.entry_price) * trade.quantity;
-        await base44.entities.PaperTrade.update(trade.id, {
-          status: "closed",
-          exit_price: cur,
-          pnl_percent: Math.round(pnlPct * 100) / 100,
-          pnl_usd: Math.round(pnlUsd * 100) / 100,
-          exit_reason: reason,
-        });
-        const cooldownMs = (cfg.cooldownMinutes || 60) * 60 * 1000;
-        cooldownMap.current[trade.symbol] = Date.now() + cooldownMs;
-        log(`❌ ÎNCHIS ${trade.symbol} | ${reason} | P&L: ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}% | Cooldown: ${cfg.cooldownMinutes}min`);
-      }
+         const pnlUsd = (cur - trade.entry_price) * trade.quantity;
+
+         // Create history record for final closure (TP2/SL)
+         await base44.entities.PaperTrade.create({
+           symbol: trade.symbol,
+           side: "BUY",
+           status: "closed",
+           entry_price: trade.entry_price,
+           exit_price: cur,
+           quantity: trade.quantity,
+           pump_score_at_entry: trade.pump_score_at_entry,
+           stop_loss: trade.stop_loss,
+           take_profit: trade.take_profit,
+           partial_tp_hit: trade.partial_tp_hit,
+           pnl_percent: Math.round(pnlPct * 100) / 100,
+           pnl_usd: Math.round(pnlUsd * 100) / 100,
+           exit_reason: reason,
+           notes: `${reason === "take_profit" ? "TP2" : reason === "stop_loss" ? "SL" : "Exit"} | ${trade.notes || ""}`,
+         });
+
+         // Also update original trade for consistency
+         await base44.entities.PaperTrade.update(trade.id, {
+           status: "closed",
+           exit_price: cur,
+           pnl_percent: Math.round(pnlPct * 100) / 100,
+           pnl_usd: Math.round(pnlUsd * 100) / 100,
+           exit_reason: reason,
+         });
+
+         const cooldownMs = (cfg.cooldownMinutes || 60) * 60 * 1000;
+         cooldownMap.current[trade.symbol] = Date.now() + cooldownMs;
+         log(`❌ ÎNCHIS ${trade.symbol} | ${reason} | P&L: ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}% | Cooldown: ${cfg.cooldownMinutes}min`);
+       }
     }
 
     // --- Open new trades ---
