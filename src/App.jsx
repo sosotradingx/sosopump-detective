@@ -9,6 +9,8 @@ import Backtest from './pages/Backtest';
 import TradingDashboard from './pages/TradingDashboard';
 import LiveTrading from './pages/LiveTrading.jsx';
 import ApiSettings from './pages/ApiSettings.jsx';
+import Pricing from './pages/Pricing.jsx';
+import AdminSubscriptions from './pages/AdminSubscriptions.jsx';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 
@@ -67,6 +69,8 @@ const AuthenticatedApp = () => {
       <Route path="/Backtest" element={<LayoutWrapper currentPageName="Backtest"><Backtest /></LayoutWrapper>} />
       <Route path="/LiveTrading" element={<LayoutWrapper currentPageName="LiveTrading"><LiveTrading /></LayoutWrapper>} />
       <Route path="/ApiSettings" element={<LayoutWrapper currentPageName="ApiSettings"><ApiSettings /></LayoutWrapper>} />
+      <Route path="/Pricing" element={<LayoutWrapper currentPageName="Pricing"><Pricing /></LayoutWrapper>} />
+      <Route path="/AdminSubscriptions" element={<LayoutWrapper currentPageName="AdminSubscriptions"><AdminSubscriptions /></LayoutWrapper>} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );

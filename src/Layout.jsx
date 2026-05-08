@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
   Search, Activity, LineChart, Wallet, Settings, Menu, X,
-  Flame, LayoutGrid, BarChart2, FlaskConical, Zap, Key
+  Flame, LayoutGrid, BarChart2, FlaskConical, Zap, Key, Crown
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { name: "Backtesting", icon: FlaskConical, page: "Backtest" },
   { name: "Live Trading", icon: Zap, page: "LiveTrading" },
   { name: "API Keys", icon: Key, page: "ApiSettings" },
+  { name: "Upgrade Plan", icon: Crown, page: "Pricing" },
   { name: "Configurare", icon: Settings, page: "Config" },
 ];
 

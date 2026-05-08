@@ -1,0 +1,56 @@
+{
+  "name": "Subscription",
+  "type": "object",
+  "properties": {
+    "plan": {
+      "type": "string",
+      "enum": [
+        "free",
+        "pro",
+        "elite"
+      ],
+      "default": "free",
+      "description": "Planul activ al utilizatorului"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "pending",
+        "expired",
+        "cancelled"
+      ],
+      "default": "pending",
+      "description": "Statusul abonamentului"
+    },
+    "expires_at": {
+      "type": "string",
+      "description": "Data expir\u0103rii abonamentului (ISO string)"
+    },
+    "tx_hash": {
+      "type": "string",
+      "description": "Hash-ul tranzac\u021biei USDC pe BEP20"
+    },
+    "amount_paid": {
+      "type": "number",
+      "description": "Suma pl\u0103tit\u0103 \u00een USDC"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Note admin"
+    },
+    "user_email": {
+      "type": "string",
+      "description": "Email-ul utilizatorului"
+    },
+    "months": {
+      "type": "number",
+      "default": 1,
+      "description": "Num\u0103rul de luni pl\u0103tite"
+    }
+  },
+  "required": [
+    "plan",
+    "user_email"
+  ]
+}
