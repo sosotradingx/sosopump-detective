@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Key, Plus, Trash2, CheckCircle, AlertCircle, Loader2, Eye, EyeOff, ShieldAlert } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
 import PlanGate from "@/components/PlanGate";
-import { getAccountBalance } from "@/components/live-trading/BinanceBrowserApi";
+
 
 export default function ApiSettings() {
   const { isPro, loading: subLoading } = useSubscription();
@@ -45,8 +45,7 @@ export default function ApiSettings() {
   const testConnection = async (keyRecord) => {
     setTesting(keyRecord.id);
     try {
-      // Test from browser - no geographic restrictions
-      await getAccountBalance(keyRecord.api_key, keyRecord.api_secret);
+      await base44.functions.invoke("testApiKey", { keyId: keyRecord.id });
       await base44.entities.UserApiKey.update(keyRecord.id, {
         test_status: "ok",
         test_message: "Conexiune stabilită ✓",
