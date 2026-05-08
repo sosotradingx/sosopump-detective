@@ -1,0 +1,81 @@
+{
+  "name": "UserApiKey",
+  "type": "object",
+  "properties": {
+    "api_key": {
+      "type": "string",
+      "description": "Binance API Key al utilizatorului"
+    },
+    "api_secret": {
+      "type": "string",
+      "description": "Binance API Secret al utilizatorului (stocat criptat)"
+    },
+    "market_type": {
+      "type": "string",
+      "enum": [
+        "spot",
+        "futures"
+      ],
+      "default": "futures",
+      "description": "Tip pia\u021b\u0103: Spot sau Futures (USDT-M)"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    },
+    "label": {
+      "type": "string",
+      "description": "Etichet\u0103 op\u021bional\u0103 (ex: Main Account)"
+    },
+    "last_tested_at": {
+      "type": "string",
+      "description": "Data ultimului test de conectivitate"
+    },
+    "test_status": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "error",
+        "untested"
+      ],
+      "default": "untested"
+    },
+    "test_message": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "api_key",
+    "api_secret"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "$or": [
+        {
+          "created_by": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "created_by": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": null
+  }
+}
