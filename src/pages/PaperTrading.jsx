@@ -57,6 +57,7 @@ export default function PaperTrading() {
   });
   const [autoConfig, setAutoConfig] = useState(loadAutoConfig);
   const [showAutoSettings, setShowAutoSettings] = useState(false);
+  const [user, setUser] = useState(null);
   // cooldownMap: { [symbol]: timestamp when cooldown expires }
   const cooldownMap = useRef({});
 
@@ -77,7 +78,6 @@ export default function PaperTrading() {
   // Keep ref in sync with state
   useEffect(() => { autoConfigRef.current = autoConfig; }, [autoConfig]);
 
-  const [user, setUser] = useState(null);
   useEffect(() => { base44.auth.me().then(setUser).catch(() => {}); }, []);
 
   const { data: trades = [], isLoading } = useQuery({
