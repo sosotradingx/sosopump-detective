@@ -69,36 +69,15 @@ export default function LiveTrading() {
     }
   }, [apiKeys, activeKey]);
 
-  // Helper: Sign Binance request
-  const signRequest = useCallback(async (queryString, secret) => {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(queryString);
-    const keyData = encoder.encode(secret);
-    const key = await crypto.subtle.importKey("raw", keyData, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-    const signature = await crypto.subtle.sign("HMAC", key, data);
-    return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, "0")).join("");
-  }, []);
-
-  // Fetch balance from Binance (direct client-side)
+  // Fetch balance from Binance via secure backend
   const fetchBalance = useCallback(async () => {
     if (!activeKey || !user) return;
     setLoadingBalance(true);
     try {
-      const decrypted = await base44.functions.invoke("decryptApiSecret", { keyId: activeKey.id });
-      const secret = decrypted.data.secret;
+      const res = await base44.functions.invoke("binanceApi", { action: "getBalance", keyId: activeKey.id });
+      if (!res.data.success) throw new Error(res.data.error || "Failed to fetch balance");
       
-      const timestamp = Date.now();
-      const queryString = `timestamp=${timestamp}`;
-      const signature = await signRequest(queryString, secret);
-      
-      const response = await fetch(
-        `https://fapi.binance.com/fapi/v2/account?${queryString}&signature=${signature}`,
-        { headers: { "X-MBX-APIKEY": activeKey.api_key } }
-      );
-      
-      if (!response.ok) throw new Error(`API: ${response.statusText}`);
-      
-      const data = await response.json();
+      const data = res.data.data;
       const availableBalance = parseFloat(data.availableBalance || 0);
       const totalWallet = parseFloat(data.totalWalletBalance || 0);
       setBalance({ totalWallet, availableBalance });
@@ -107,7 +86,7 @@ export default function LiveTrading() {
       setBotLog(`❌ Eroare: ${e.message}`);
     }
     setLoadingBalance(false);
-  }, [activeKey, user, signRequest]);
+  }, [activeKey, user]);
 
   // Fetch open orders - disabled due to geolocation restrictions
   const fetchOpenOrders = useCallback(async () => {
@@ -146,7 +125,7 @@ export default function LiveTrading() {
     return () => clearInterval(interval);
   }, [loadPrices]);
 
-  // Place order mutation (direct client-side)
+  // Place order mutation via secure backend
   const placeOrderMutation = useMutation({
     mutationFn: async () => {
       if (!activeKey || !user) throw new Error("No API key");
@@ -156,34 +135,22 @@ export default function LiveTrading() {
       
       setPlacingOrder(true);
       try {
-        const decrypted = await base44.functions.invoke("decryptApiSecret", { keyId: activeKey.id });
-        const secret = decrypted.data.secret;
-        
-        const timestamp = Date.now();
-        const params = {
-          symbol: orderParams.symbol,
-          side: orderParams.side,
-          type: "LIMIT",
-          timeInForce: "GTC",
-          quantity: orderParams.quantity.toString(),
-          price: orderParams.price.toString(),
-          timestamp
-        };
-        
-        const queryString = new URLSearchParams(params).toString();
-        const signature = await signRequest(queryString, secret);
-        
-        const response = await fetch(
-          `https://fapi.binance.com/fapi/v1/order?${queryString}&signature=${signature}`,
-          {
-            method: "POST",
-            headers: { "X-MBX-APIKEY": activeKey.api_key }
+        const res = await base44.functions.invoke("binanceApi", {
+          action: "placeOrder",
+          keyId: activeKey.id,
+          params: {
+            symbol: orderParams.symbol,
+            side: orderParams.side,
+            type: "LIMIT",
+            timeInForce: "GTC",
+            quantity: orderParams.quantity.toString(),
+            price: orderParams.price.toString(),
           }
-        );
+        });
         
-        if (!response.ok) throw new Error(`API: ${response.statusText}`);
+        if (!res.data.success) throw new Error(res.data.error || "Failed to place order");
         
-        const orderRes = await response.json();
+        const orderRes = res.data.data;
 
         await base44.entities.LiveTrade.create({
           symbol: orderParams.symbol,
