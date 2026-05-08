@@ -45,10 +45,13 @@ Deno.serve(async (req) => {
 
     // Build request based on action
     switch (action) {
-      case 'getBalance':
-        queryString = new URLSearchParams({ timestamp: Date.now().toString() }).toString();
-        url = `https://fapi.binance.com/fapi/v2/account?${queryString}&signature=${await hmacSha256(queryString, apiSecret)}`;
+      case 'getBalance': {
+        const now = Date.now();
+        queryString = new URLSearchParams({ timestamp: now.toString() }).toString();
+        const signature = await hmacSha256(queryString, apiSecret);
+        url = `https://fapi.binance.com/fapi/v1/account?${queryString}&signature=${signature}`;
         break;
+      }
 
       case 'getTickerPrice':
         url = `https://fapi.binance.com/fapi/v1/ticker/price?symbol=${params.symbol}`;

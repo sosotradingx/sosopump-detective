@@ -1,83 +1,71 @@
-import React, { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { base44 } from "@/api/base44Client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { fetchTopPairs, formatPrice } from "../components/scanner/binanceApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Zap, TrendingUp, TrendingDown, RefreshCw, AlertTriangle, DollarSign, Activity, Loader2, X } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Plus, X, Loader2, Zap, Activity, RefreshCw, AlertTriangle, DollarSign } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
 import PlanGate from "@/components/PlanGate";
-
 
 export default function LiveTrading() {
   const { isPro, loading: subLoading } = useSubscription();
   const queryClient = useQueryClient();
   const [user, setUser] = useState(null);
+  const [activeKey, setActiveKey] = useState(null);
   const [balance, setBalance] = useState(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
-  const [botLog, setBotLog] = useState("");
-  const [activeKey, setActiveKey] = useState(null);
+  const [prices, setPrices] = useState({});
   const [orderDialog, setOrderDialog] = useState(false);
+  const [placingOrder, setPlacingOrder] = useState(false);
+  const [botLog, setBotLog] = useState("");
+
   const [orderParams, setOrderParams] = useState({
     symbol: "BTCUSDT",
     side: "BUY",
     quantity: 0.01,
-    price: 0,
+    price: 0
   });
-  const [placingOrder, setPlacingOrder] = useState(false);
 
   useEffect(() => {
     base44.auth.me().then(setUser).catch(() => {});
   }, []);
 
+  // Fetch active API key
   const { data: apiKeys = [] } = useQuery({
     queryKey: ["userApiKeys", user?.email],
-    queryFn: () => base44.entities.UserApiKey.filter({ created_by: user.email, is_active: true }),
+    queryFn: () => base44.entities.UserApiKey.filter({ created_by: user.email }, "-created_date", 10),
     enabled: !!user,
+    refetchInterval: 30000,
   });
 
   useEffect(() => {
-    if (apiKeys.length > 0) setActiveKey(apiKeys[0]);
-  }, [apiKeys]);
+    if (apiKeys.length > 0 && !activeKey) {
+      const active = apiKeys.find(k => k.is_active) || apiKeys[0];
+      setActiveKey(active);
+    }
+  }, [apiKeys, activeKey]);
 
-  const { data: trades = [] } = useQuery({
-    queryKey: ["liveTrades", user?.email],
-    queryFn: () => base44.entities.LiveTrade.filter({ created_by: user.email }, "-created_date", 50),
-    refetchInterval: 15000,
-    enabled: !!user,
-  });
-
+  // Fetch balance from Binance
   const fetchBalance = useCallback(async () => {
     if (!activeKey || !user) return;
     setLoadingBalance(true);
     try {
-      const response = await base44.functions.invoke("binanceApi", { 
+      const response = await base44.functions.invoke("binanceApi", {
         action: "getBalance",
-        keyId: activeKey.id 
+        keyId: activeKey.id
       });
       const accountData = response.data;
-      
       const totalWallet = accountData?.totalWalletBalance ? parseFloat(accountData.totalWalletBalance) : 0;
       const availableBalance = accountData?.availableBalance ? parseFloat(accountData.availableBalance) : 0;
-      
       setBalance({ totalWallet, availableBalance });
-      
-      await base44.entities.LiveTrade.create({
-        symbol: "BALANCE_CHECK",
-        side: "BUY",
-        status: "closed",
-        entry_price: availableBalance,
-        exit_price: totalWallet,
-        quantity: 1,
-        notes: `Balance check at ${new Date().toLocaleString("ro-RO")}`,
-      });
+      setBotLog(`✅ Balanță actualizată: ${availableBalance.toFixed(2)} USDT`);
     } catch (e) {
-      console.error("Balance fetch error:", e);
-      setBotLog(`❌ Balance error: ${e.message}`);
+      setBotLog(`❌ Eroare balanță: ${e.message}`);
     }
     setLoadingBalance(false);
   }, [activeKey, user]);
@@ -88,6 +76,25 @@ export default function LiveTrading() {
     return () => clearInterval(interval);
   }, [activeKey, fetchBalance]);
 
+  // Load market prices
+  const loadPrices = useCallback(async () => {
+    try {
+      const pairs = await fetchTopPairs("USDT", 200, 0);
+      const priceMap = {};
+      pairs.forEach(p => { priceMap[p.symbol] = p.price; });
+      setPrices(priceMap);
+    } catch (e) {
+      console.error("Error loading prices:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPrices();
+    const interval = setInterval(loadPrices, 15000);
+    return () => clearInterval(interval);
+  }, [loadPrices]);
+
+  // Place order mutation
   const placeOrderMutation = useMutation({
     mutationFn: async () => {
       if (!activeKey || !user) throw new Error("No API key");
@@ -115,7 +122,7 @@ export default function LiveTrading() {
           entry_price: orderParams.price,
           quantity: orderParams.quantity,
           binance_order_id: orderRes?.orderId,
-          notes: `Placed via backend at ${new Date().toLocaleString("ro-RO")}`,
+          notes: `Placed at ${new Date().toLocaleString("ro-RO")}`,
         });
 
         setBotLog(`✅ Ordine plasată: ${orderParams.symbol} ${orderParams.side} ${orderParams.quantity}@${orderParams.price}`);
@@ -123,9 +130,19 @@ export default function LiveTrading() {
         queryClient.invalidateQueries({ queryKey: ["liveTrades"] });
       } catch (e) {
         setBotLog(`❌ Eroare ordine: ${e.message}`);
+        throw e;
+      } finally {
+        setPlacingOrder(false);
       }
-      setPlacingOrder(false);
     },
+  });
+
+  // Fetch trades
+  const { data: trades = [], isLoading } = useQuery({
+    queryKey: ["liveTrades", user?.email],
+    queryFn: () => base44.entities.LiveTrade.filter({ created_by: user.email }, "-created_date", 100),
+    enabled: !!user,
+    refetchInterval: 15000,
   });
 
   const openTrades = trades.filter(t => t.status === "open");
@@ -144,7 +161,7 @@ export default function LiveTrading() {
           <Zap className="w-6 h-6 text-primary" />
           <div>
             <h1 className="text-2xl font-bold">⚡ Live Trading</h1>
-            <p className="text-sm text-muted-foreground">Tranzacții reale pe Binance (din browser)</p>
+            <p className="text-sm text-muted-foreground">Tranzacții reale pe Binance Futures</p>
           </div>
         </div>
         {!activeKey && (
@@ -161,13 +178,19 @@ export default function LiveTrading() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
-        {/* Config Panel */}
+        {/* Control Panel */}
         <div className="space-y-4">
           {/* Balance */}
           <div className="bg-card border border-border rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
               <p className="text-xs font-mono text-muted-foreground uppercase">Balanță Binance</p>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={fetchBalance} disabled={loadingBalance || !activeKey}>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-7 w-7" 
+                onClick={fetchBalance} 
+                disabled={loadingBalance || !activeKey}
+              >
                 <RefreshCw className={`w-3 h-3 ${loadingBalance ? "animate-spin" : ""}`} />
               </Button>
             </div>
@@ -213,7 +236,12 @@ export default function LiveTrading() {
               <div className="space-y-4 pt-4">
                 <div>
                   <Label>Pereche</Label>
-                  <Input type="text" value={orderParams.symbol} onChange={e => setOrderParams({...orderParams, symbol: e.target.value.toUpperCase()})} placeholder="BTCUSDT" />
+                  <Input 
+                    type="text" 
+                    value={orderParams.symbol} 
+                    onChange={e => setOrderParams({...orderParams, symbol: e.target.value.toUpperCase()})} 
+                    placeholder="BTCUSDT" 
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -228,14 +256,28 @@ export default function LiveTrading() {
                   </div>
                   <div>
                     <Label>Cantitate</Label>
-                    <Input type="number" step="0.001" value={orderParams.quantity} onChange={e => setOrderParams({...orderParams, quantity: parseFloat(e.target.value) || 0})} />
+                    <Input 
+                      type="number" 
+                      step="0.001" 
+                      value={orderParams.quantity} 
+                      onChange={e => setOrderParams({...orderParams, quantity: parseFloat(e.target.value) || 0})} 
+                    />
                   </div>
                 </div>
                 <div>
                   <Label>Preț Limit</Label>
-                  <Input type="number" step="0.01" value={orderParams.price} onChange={e => setOrderParams({...orderParams, price: parseFloat(e.target.value) || 0})} />
+                  <Input 
+                    type="number" 
+                    step="0.01" 
+                    value={orderParams.price} 
+                    onChange={e => setOrderParams({...orderParams, price: parseFloat(e.target.value) || 0})} 
+                  />
                 </div>
-                <Button onClick={() => placeOrderMutation.mutate()} disabled={placingOrder || !activeKey} className="w-full bg-pump-strong hover:bg-pump-strong/90">
+                <Button 
+                  onClick={() => placeOrderMutation.mutate()} 
+                  disabled={placingOrder || !activeKey} 
+                  className="w-full bg-pump-strong hover:bg-pump-strong/90"
+                >
                   {placingOrder ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Zap className="w-4 h-4 mr-2" />}
                   Plasează
                 </Button>
@@ -264,23 +306,35 @@ export default function LiveTrading() {
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
-                  <thead><tr className="text-muted-foreground border-b border-border">
-                    <th className="text-left p-3">Pereche</th>
-                    <th className="text-center p-3">Side</th>
-                    <th className="text-right p-3">Intrare $</th>
-                    <th className="text-right p-3">Qty</th>
-                  </tr></thead>
+                  <thead>
+                    <tr className="text-muted-foreground border-b border-border">
+                      <th className="text-left p-3">Pereche</th>
+                      <th className="text-center p-3">Side</th>
+                      <th className="text-right p-3">Intrare $</th>
+                      <th className="text-right p-3">Qty</th>
+                      <th className="text-right p-3">Curent</th>
+                      <th className="text-right p-3">P&L</th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {openTrades.map(t => (
-                      <tr key={t.id} className="border-b border-border/40 hover:bg-accent/20">
-                        <td className="p-3 font-mono font-bold">{t.symbol}</td>
-                        <td className="p-3 text-center">
-                          <Badge variant="outline" className={t.side === "BUY" ? "text-chart-green" : "text-chart-red"}>{t.side}</Badge>
-                        </td>
-                        <td className="p-3 text-right font-mono">${t.entry_price?.toFixed(4)}</td>
-                        <td className="p-3 text-right font-mono">{t.quantity}</td>
-                      </tr>
-                    ))}
+                    {openTrades.map(t => {
+                      const curPrice = prices[t.symbol] || t.entry_price;
+                      const pnl = ((curPrice - t.entry_price) / t.entry_price) * 100;
+                      return (
+                        <tr key={t.id} className="border-b border-border/40 hover:bg-accent/20">
+                          <td className="p-3 font-mono font-bold">{t.symbol}</td>
+                          <td className="p-3 text-center">
+                            <Badge variant="outline" className={t.side === "BUY" ? "text-chart-green" : "text-chart-red"}>{t.side}</Badge>
+                          </td>
+                          <td className="p-3 text-right font-mono">${t.entry_price?.toFixed(4)}</td>
+                          <td className="p-3 text-right font-mono">{t.quantity}</td>
+                          <td className="p-3 text-right font-mono">${curPrice?.toFixed(4)}</td>
+                          <td className={`p-3 text-right font-mono font-bold ${pnl >= 0 ? "text-chart-green" : "text-chart-red"}`}>
+                            {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}%
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -298,13 +352,15 @@ export default function LiveTrading() {
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
-                  <thead><tr className="text-muted-foreground border-b border-border">
-                    <th className="text-left p-3">Pereche</th>
-                    <th className="text-right p-3">Intrare</th>
-                    <th className="text-right p-3">Ieșire</th>
-                    <th className="text-right p-3">P&L %</th>
-                    <th className="text-right p-3">P&L $</th>
-                  </tr></thead>
+                  <thead>
+                    <tr className="text-muted-foreground border-b border-border">
+                      <th className="text-left p-3">Pereche</th>
+                      <th className="text-right p-3">Intrare</th>
+                      <th className="text-right p-3">Ieșire</th>
+                      <th className="text-right p-3">P&L %</th>
+                      <th className="text-right p-3">P&L $</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {closedTrades.slice(0, 30).map(t => (
                       <tr key={t.id} className="border-b border-border/40 hover:bg-accent/20">
