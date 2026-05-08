@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
   Search, Activity, LineChart, Wallet, Settings, Menu, X,
-  Flame, LayoutGrid, BarChart2, FlaskConical, Zap, Key, Crown, LogOut
+  LayoutGrid, BarChart2, FlaskConical, Zap, Key, Crown, LogOut
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { base44 } from "@/api/base44Client";
@@ -31,9 +31,11 @@ export default function Layout({ children, currentPageName }) {
       <aside className="hidden lg:flex flex-col w-64 border-r border-border bg-card/50 backdrop-blur-sm">
         <div className="p-5 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-primary/20 rounded-xl flex items-center justify-center">
-              <Flame className="w-6 h-6 text-primary" />
-            </div>
+            <img
+              src="https://media.base44.com/images/public/69b1ed87d348d325856ccd73/f4bcf56fd_image.png"
+              alt="SOSO Logo"
+              className="w-10 h-10 rounded-xl object-cover"
+            />
             <div>
               <h1 className="font-bold text-foreground text-sm tracking-wide">SOSO PUMP</h1>
               <p className="text-[10px] text-muted-foreground font-mono">DETECTIVE v3.1</p>
@@ -82,7 +84,11 @@ export default function Layout({ children, currentPageName }) {
       <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-md border-b border-border">
         <div className="flex items-center justify-between p-3">
           <div className="flex items-center gap-2">
-            <Flame className="w-5 h-5 text-primary" />
+            <img
+              src="https://media.base44.com/images/public/69b1ed87d348d325856ccd73/f4bcf56fd_image.png"
+              alt="SOSO Logo"
+              className="w-6 h-6 rounded object-cover"
+            />
             <span className="font-bold text-sm">SOSO PUMP</span>
           </div>
           <Button variant="ghost" size="icon" onClick={() => setMobileOpen(!mobileOpen)}>
