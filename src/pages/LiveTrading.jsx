@@ -55,13 +55,14 @@ export default function LiveTrading() {
     if (!activeKey || !user) return;
     setLoadingBalance(true);
     try {
-      const accountData = await base44.functions.invoke("binanceApi", { 
+      const response = await base44.functions.invoke("binanceApi", { 
         action: "getBalance",
         keyId: activeKey.id 
       });
+      const accountData = response.data;
       
-      const totalWallet = accountData.totalWalletBalance ? parseFloat(accountData.totalWalletBalance) : 0;
-      const availableBalance = accountData.availableBalance ? parseFloat(accountData.availableBalance) : 0;
+      const totalWallet = accountData?.totalWalletBalance ? parseFloat(accountData.totalWalletBalance) : 0;
+      const availableBalance = accountData?.availableBalance ? parseFloat(accountData.availableBalance) : 0;
       
       setBalance({ totalWallet, availableBalance });
       
@@ -93,7 +94,7 @@ export default function LiveTrading() {
       
       setPlacingOrder(true);
       try {
-        const orderRes = await base44.functions.invoke("binanceApi", {
+        const response = await base44.functions.invoke("binanceApi", {
           action: "placeOrder",
           keyId: activeKey.id,
           params: {
@@ -105,6 +106,7 @@ export default function LiveTrading() {
             price: orderParams.price.toString(),
           }
         });
+        const orderRes = response.data;
 
         await base44.entities.LiveTrade.create({
           symbol: orderParams.symbol,
@@ -112,7 +114,7 @@ export default function LiveTrading() {
           status: "open",
           entry_price: orderParams.price,
           quantity: orderParams.quantity,
-          binance_order_id: orderRes.orderId,
+          binance_order_id: orderRes?.orderId,
           notes: `Placed via backend at ${new Date().toLocaleString("ro-RO")}`,
         });
 
