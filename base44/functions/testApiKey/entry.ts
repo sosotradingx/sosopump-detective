@@ -1,5 +1,15 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.25';
-import { createHmac } from 'node:crypto';
+
+async function hmacSHA256(secret, message) {
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(secret);
+  const msgData = encoder.encode(message);
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw", keyData, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+  const sigBuffer = await crypto.subtle.sign("HMAC", cryptoKey, msgData);
+  return Array.from(new Uint8Array(sigBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
 
 Deno.serve(async (req) => {
   try {
@@ -10,12 +20,10 @@ Deno.serve(async (req) => {
     const { api_key_id } = await req.json();
     if (!api_key_id) return Response.json({ error: 'api_key_id required' }, { status: 400 });
 
-    // Fetch the key record (service role to read any record)
     const keys = await base44.asServiceRole.entities.UserApiKey.filter({ id: api_key_id });
     const keyRecord = keys?.[0];
 
     if (!keyRecord) return Response.json({ success: false, message: 'Cheia nu a fost găsită' });
-    // Security: only owner can test their key
     if (keyRecord.created_by !== user.email) return Response.json({ error: 'Forbidden' }, { status: 403 });
 
     const isFutures = (keyRecord.market_type || 'futures') === 'futures';
@@ -25,7 +33,7 @@ Deno.serve(async (req) => {
 
     const timestamp = Date.now();
     const queryString = `timestamp=${timestamp}`;
-    const signature = createHmac('sha256', keyRecord.api_secret).update(queryString).digest('hex');
+    const signature = await hmacSHA256(keyRecord.api_secret, queryString);
     const url = `${baseUrl}?${queryString}&signature=${signature}`;
 
     const resp = await fetch(url, {
