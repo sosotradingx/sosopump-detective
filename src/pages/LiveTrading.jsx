@@ -44,12 +44,23 @@ export default function LiveTrading() {
   });
 
   // Fetch trades - MUST be before fetchOpenOrders
-  const { data: trades = [], isLoading } = useQuery({
+  const { data: trades = [], isLoading, refetch: refetchTrades } = useQuery({
     queryKey: ["liveTrades", user?.email],
     queryFn: () => base44.entities.LiveTrade.filter({ created_by: user.email }, "-created_date", 100),
     enabled: !!user,
-    refetchInterval: 15000,
+    refetchInterval: 5000,
   });
+
+  // Real-time subscription to trades
+  useEffect(() => {
+    if (!user) return;
+    const unsubscribe = base44.entities.LiveTrade.subscribe((event) => {
+      if (event.data.created_by === user.email) {
+        refetchTrades();
+      }
+    });
+    return () => unsubscribe();
+  }, [user, refetchTrades]);
 
   useEffect(() => {
     if (apiKeys.length > 0 && !activeKey) {
@@ -130,12 +141,12 @@ export default function LiveTrading() {
             });
           }
         }
-        queryClient.invalidateQueries({ queryKey: ["liveTrades"] });
+        refetchTrades();
       }
     } catch (e) {
       console.error("Error fetching open orders:", e);
     }
-  }, [activeKey, user, trades, queryClient]);
+  }, [activeKey, user, trades, refetchTrades]);
 
   useEffect(() => {
     if (activeKey) {
