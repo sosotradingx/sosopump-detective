@@ -173,13 +173,22 @@ export default function PaperTrading() {
     }
 
     // --- Check open trades for exit conditions ---
-    for (const trade of openTrades) {
-      const cur = priceMap[trade.symbol] || trade.entry_price;
-      const pnlPct = ((cur - trade.entry_price) / trade.entry_price) * 100;
-      let reason = null;
+     for (const trade of openTrades) {
+       const cur = priceMap[trade.symbol] || trade.entry_price;
+       const pnlPct = ((cur - trade.entry_price) / trade.entry_price) * 100;
+       let reason = null;
 
-      // --- Partial Take-Profit (TP1) ---
-      if (cfg.usePartialTP && !trade.partial_tp_hit) {
+       // --- Check SL FIRST (most critical) ---
+       if (trade.stop_loss > 0 && cur <= trade.stop_loss) {
+         reason = "stop_loss";
+       }
+       // --- Then check TP ---
+       else if (trade.take_profit > 0 && cur >= trade.take_profit) {
+         reason = "take_profit";
+       }
+
+       // --- Partial Take-Profit (TP1) only if not already exiting on SL/TP ---
+       if (!reason && cfg.usePartialTP && !trade.partial_tp_hit) {
         const tp1Price = trade.entry_price * (1 + (cfg.partialTPTarget ?? 10) / 100);
         if (cur >= tp1Price && trade.quantity > 0) {
           const partialQty = Math.round(trade.quantity * ((cfg.partialTPPercent ?? 50) / 100) * 10000) / 10000;
@@ -216,11 +225,8 @@ export default function PaperTrading() {
 
           log(`🎯 PARTIAL TP ${trade.symbol} | Vândut ${cfg.partialTPPercent ?? 50}% la +${partialPnlPct.toFixed(2)}% | Rămâne: ${remainQty}${cfg.moveSlToBreakeven ? " | SL→Breakeven" : ""}`);
           continue; // skip full-close check this cycle
-        }
-      }
-
-      if (cfg.autoTP && trade.take_profit > 0 && cur >= trade.take_profit) reason = "take_profit";
-      else if (cfg.autoSL && trade.stop_loss > 0 && cur <= trade.stop_loss) reason = "stop_loss";
+          }
+          }
 
       if (!reason && cfg.autoExitLowScore) {
         const kl = await fetchKlines(trade.symbol, cfg.timeframe, 60, isPerpetual);
