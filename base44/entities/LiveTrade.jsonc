@@ -1,0 +1,135 @@
+{
+  "name": "LiveTrade",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Trading pair ex: BTCUSDT"
+    },
+    "side": {
+      "type": "string",
+      "enum": [
+        "BUY",
+        "SELL"
+      ],
+      "default": "BUY"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "closed",
+        "error"
+      ],
+      "default": "open"
+    },
+    "market_type": {
+      "type": "string",
+      "enum": [
+        "spot",
+        "futures"
+      ],
+      "default": "futures"
+    },
+    "entry_price": {
+      "type": "number"
+    },
+    "exit_price": {
+      "type": "number"
+    },
+    "quantity": {
+      "type": "number"
+    },
+    "notional_usd": {
+      "type": "number",
+      "description": "Valoarea \u00een USD la intrare"
+    },
+    "stop_loss": {
+      "type": "number"
+    },
+    "take_profit": {
+      "type": "number"
+    },
+    "binance_order_id": {
+      "type": "string",
+      "description": "ID-ul ordinului pe Binance"
+    },
+    "sl_order_id": {
+      "type": "string"
+    },
+    "tp_order_id": {
+      "type": "string"
+    },
+    "pump_score_at_entry": {
+      "type": "number"
+    },
+    "pnl_percent": {
+      "type": "number"
+    },
+    "pnl_usd": {
+      "type": "number"
+    },
+    "exit_reason": {
+      "type": "string",
+      "enum": [
+        "take_profit",
+        "stop_loss",
+        "manual",
+        "error",
+        ""
+      ]
+    },
+    "notes": {
+      "type": "string"
+    },
+    "error_message": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "symbol",
+    "entry_price",
+    "quantity"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "$or": [
+        {
+          "created_by": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "created_by": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}
