@@ -200,9 +200,8 @@ export default function MultiChart() {
       {/* Chart Grid */}
       <div className="flex-1 min-h-0 p-2 overflow-auto">
         {layout.id === "1+3" ? (
-          // Special 1+3 layout
-          <div className="grid grid-cols-3 gap-2 h-full" style={{ minHeight: 0 }}>
-            <div className="col-span-2 row-span-2" style={{ minHeight: 0 }}>
+          <div className="grid grid-cols-3 gap-2" style={{ height: "100%", minHeight: "500px" }}>
+            <div className="col-span-2" style={{ minHeight: "500px" }}>
               <ChartPanel
                 index={0}
                 symbol={symbols[0]}
@@ -212,11 +211,13 @@ export default function MultiChart() {
                 availablePairs={availablePairs}
                 colorIndex={0}
                 isExpanded
+                chartHeight={460}
               />
             </div>
-            {[1, 2, 3].map(i => (
-              <div key={i} style={{ minHeight: 0 }}>
+            <div className="flex flex-col gap-2">
+              {[1, 2, 3].map(i => (
                 <ChartPanel
+                  key={i}
                   index={i}
                   symbol={symbols[i]}
                   timeframe={timeframes[i]}
@@ -224,24 +225,25 @@ export default function MultiChart() {
                   onTimeframeChange={tf => handleTFChange(i, tf)}
                   availablePairs={availablePairs}
                   colorIndex={i}
+                  chartHeight={140}
                 />
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         ) : (
-          <div className={`grid ${layout.cols} gap-2 h-full`} style={{ minHeight: 0 }}>
+          <div className={`grid ${layout.cols} gap-2`}>
             {visiblePanels.map((_, i) => (
-              <div key={i} style={{ minHeight: 0 }}>
-                <ChartPanel
-                  index={i}
-                  symbol={symbols[i]}
-                  timeframe={timeframes[i]}
-                  onSymbolChange={s => handleSymbolChange(i, s)}
-                  onTimeframeChange={tf => handleTFChange(i, tf)}
-                  availablePairs={availablePairs}
-                  colorIndex={i}
-                />
-              </div>
+              <ChartPanel
+                key={i}
+                index={i}
+                symbol={symbols[i]}
+                timeframe={timeframes[i]}
+                onSymbolChange={s => handleSymbolChange(i, s)}
+                onTimeframeChange={tf => handleTFChange(i, tf)}
+                availablePairs={availablePairs}
+                colorIndex={i}
+                chartHeight={layout.panels === 1 ? 520 : layout.panels === 2 ? 400 : 260}
+              />
             ))}
           </div>
         )}

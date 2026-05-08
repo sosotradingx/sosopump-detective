@@ -38,7 +38,7 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
-export default function ChartPanel({ index, symbol, timeframe, onSymbolChange, onTimeframeChange, availablePairs, colorIndex = 0, isExpanded }) {
+export default function ChartPanel({ index, symbol, timeframe, onSymbolChange, onTimeframeChange, availablePairs, colorIndex = 0, isExpanded, chartHeight = 220 }) {
   const [klines, setKlines] = useState([]);
   const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -192,7 +192,7 @@ export default function ChartPanel({ index, symbol, timeframe, onSymbolChange, o
       )}
 
       {/* Chart */}
-      <div className="flex-1 min-h-0 p-2">
+      <div className="p-2" style={{ height: chartHeight }}>
         {loading && klines.length === 0 ? (
           <div className="h-full flex items-center justify-center">
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
