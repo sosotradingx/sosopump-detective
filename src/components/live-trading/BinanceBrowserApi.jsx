@@ -18,12 +18,16 @@ async function getAccountBalance(apiKey, apiSecret) {
   const queryString = `timestamp=${timestamp}`;
   const signature = await hmacSha256(queryString, apiSecret);
   
-  const response = await fetch(
-    `https://fapi.binance.com/fapi/v2/account?${queryString}&signature=${signature}`,
-    {
-      headers: { 'X-MBX-APIKEY': apiKey }
+  // Use CORS proxy for geographic restriction bypass
+  const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+  const binanceUrl = `https://fapi.binance.com/fapi/v2/account?${queryString}&signature=${signature}`;
+  
+  const response = await fetch(proxyUrl + binanceUrl, {
+    headers: { 
+      'X-MBX-APIKEY': apiKey,
+      'Origin': window.location.origin
     }
-  );
+  });
   
   if (!response.ok) throw new Error(`Binance error: ${response.statusText}`);
   return response.json();
@@ -34,13 +38,16 @@ async function placeOrder(apiKey, apiSecret, params) {
   const queryString = new URLSearchParams({ ...params, timestamp }).toString();
   const signature = await hmacSha256(queryString, apiSecret);
   
-  const response = await fetch(
-    `https://fapi.binance.com/fapi/v1/order?${queryString}&signature=${signature}`,
-    {
-      method: 'POST',
-      headers: { 'X-MBX-APIKEY': apiKey }
+  const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+  const binanceUrl = `https://fapi.binance.com/fapi/v1/order?${queryString}&signature=${signature}`;
+  
+  const response = await fetch(proxyUrl + binanceUrl, {
+    method: 'POST',
+    headers: { 
+      'X-MBX-APIKEY': apiKey,
+      'Origin': window.location.origin
     }
-  );
+  });
   
   if (!response.ok) {
     const error = await response.json();
@@ -54,13 +61,16 @@ async function cancelOrder(apiKey, apiSecret, symbol, orderId) {
   const queryString = new URLSearchParams({ symbol, orderId, timestamp }).toString();
   const signature = await hmacSha256(queryString, apiSecret);
   
-  const response = await fetch(
-    `https://fapi.binance.com/fapi/v1/order?${queryString}&signature=${signature}`,
-    {
-      method: 'DELETE',
-      headers: { 'X-MBX-APIKEY': apiKey }
+  const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+  const binanceUrl = `https://fapi.binance.com/fapi/v1/order?${queryString}&signature=${signature}`;
+  
+  const response = await fetch(proxyUrl + binanceUrl, {
+    method: 'DELETE',
+    headers: { 
+      'X-MBX-APIKEY': apiKey,
+      'Origin': window.location.origin
     }
-  );
+  });
   
   if (!response.ok) throw new Error(`Binance error: ${response.statusText}`);
   return response.json();
@@ -74,12 +84,15 @@ async function getOpenOrders(apiKey, apiSecret, symbol = null) {
   const queryString = new URLSearchParams(params).toString();
   const signature = await hmacSha256(queryString, apiSecret);
   
-  const response = await fetch(
-    `https://fapi.binance.com/fapi/v1/openOrders?${queryString}&signature=${signature}`,
-    {
-      headers: { 'X-MBX-APIKEY': apiKey }
+  const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+  const binanceUrl = `https://fapi.binance.com/fapi/v1/openOrders?${queryString}&signature=${signature}`;
+  
+  const response = await fetch(proxyUrl + binanceUrl, {
+    headers: { 
+      'X-MBX-APIKEY': apiKey,
+      'Origin': window.location.origin
     }
-  );
+  });
   
   if (!response.ok) throw new Error(`Binance error: ${response.statusText}`);
   return response.json();
@@ -90,12 +103,15 @@ async function getUserTrades(apiKey, apiSecret, symbol) {
   const queryString = new URLSearchParams({ symbol, timestamp }).toString();
   const signature = await hmacSha256(queryString, apiSecret);
   
-  const response = await fetch(
-    `https://fapi.binance.com/fapi/v1/userTrades?${queryString}&signature=${signature}`,
-    {
-      headers: { 'X-MBX-APIKEY': apiKey }
+  const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+  const binanceUrl = `https://fapi.binance.com/fapi/v1/userTrades?${queryString}&signature=${signature}`;
+  
+  const response = await fetch(proxyUrl + binanceUrl, {
+    headers: { 
+      'X-MBX-APIKEY': apiKey,
+      'Origin': window.location.origin
     }
-  );
+  });
   
   if (!response.ok) throw new Error(`Binance error: ${response.statusText}`);
   return response.json();
