@@ -25,6 +25,7 @@ export default function LiveTrading() {
   const [placingOrder, setPlacingOrder] = useState(false);
   const [botLog, setBotLog] = useState("");
   const [listenKey, setListenKey] = useState(null);
+  const [positions, setPositions] = useState([]);
   const wsRef = useRef(null);
   const listenKeyRef = useRef(null);
   const renewIntervalRef = useRef(null);
@@ -93,6 +94,21 @@ export default function LiveTrading() {
     setLoadingBalance(false);
   }, [activeKey, user]);
 
+  // Fetch open positions snapshot from REST
+  const fetchPositions = useCallback(async () => {
+    if (!activeKey || !user) return;
+    try {
+      const res = await base44.functions.invoke("binanceApi", { action: "getPositionRisk", keyId: activeKey.id });
+      if (!res.data.success) throw new Error(res.data.error || "Failed to fetch positions");
+      
+      const allPositions = res.data.data || [];
+      const activePositions = allPositions.filter(p => parseFloat(p.positionAmt) !== 0);
+      setPositions(activePositions);
+    } catch (e) {
+      console.error("Error fetching positions:", e);
+    }
+  }, [activeKey, user]);
+
   // Get listenKey and open WebSocket
   const initializeWebSocket = useCallback(async () => {
     if (!activeKey || !user) return;
@@ -120,6 +136,17 @@ export default function LiveTrading() {
               totalWallet: parseFloat(usdt.f) + parseFloat(usdt.r)
             });
           }
+          
+          // Update positions from WS
+          const wsPositions = (data.a.P || []).filter(p => parseFloat(p.pa) !== 0);
+          setPositions(wsPositions.map(p => ({
+            symbol: p.s,
+            positionAmt: p.pa,
+            entryPrice: p.ep,
+            unRealizedProfit: p.up,
+            liquidationPrice: p.lp,
+            leverage: p.l
+          })));
         }
       };
       
@@ -155,9 +182,10 @@ export default function LiveTrading() {
   useEffect(() => {
     if (activeKey) {
       fetchBalance();
+      fetchPositions();
       initializeWebSocket();
     }
-  }, [activeKey, fetchBalance, initializeWebSocket]);
+  }, [activeKey, fetchBalance, fetchPositions, initializeWebSocket]);
 
   // Load market prices
   const loadPrices = useCallback(async () => {
@@ -376,6 +404,44 @@ export default function LiveTrading() {
 
         {/* Trades Panel */}
         <div className="space-y-4">
+          {/* Live Positions */}
+          {positions.length > 0 && (
+            <div className="bg-card border border-border rounded-xl overflow-hidden">
+              <div className="p-4 border-b border-border flex items-center gap-2">
+                <Zap className="w-4 h-4 text-primary" />
+                <h3 className="text-sm font-semibold">Poziții Live ({positions.length})</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-muted-foreground border-b border-border">
+                      <th className="text-left p-3">Pereche</th>
+                      <th className="text-right p-3">Qty</th>
+                      <th className="text-right p-3">Intrare</th>
+                      <th className="text-right p-3">P&L USD</th>
+                      <th className="text-right p-3">Liquidare</th>
+                      <th className="text-right p-3">Leverage</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {positions.map(pos => (
+                      <tr key={pos.symbol} className="border-b border-border/40 hover:bg-accent/20">
+                        <td className="p-3 font-mono font-bold">{pos.symbol}</td>
+                        <td className="p-3 text-right font-mono">{parseFloat(pos.positionAmt || 0).toFixed(3)}</td>
+                        <td className="p-3 text-right font-mono">${parseFloat(pos.entryPrice || 0).toFixed(4)}</td>
+                        <td className={`p-3 text-right font-mono font-bold ${parseFloat(pos.unRealizedProfit || 0) >= 0 ? "text-chart-green" : "text-chart-red"}`}>
+                          {parseFloat(pos.unRealizedProfit || 0) >= 0 ? "+" : ""}{parseFloat(pos.unRealizedProfit || 0).toFixed(2)}
+                        </td>
+                        <td className="p-3 text-right font-mono">${parseFloat(pos.liquidationPrice || 0).toFixed(4)}</td>
+                        <td className="p-3 text-right font-mono">{pos.leverage || "—"}x</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Open Trades */}
           <div className="bg-card border border-border rounded-xl overflow-hidden">
             <div className="p-4 border-b border-border flex items-center gap-2">
