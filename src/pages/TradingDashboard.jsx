@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -42,10 +42,14 @@ const PERIOD_OPTIONS = [
 
 export default function TradingDashboard() {
   const [period, setPeriod] = useState("3");
+  const [user, setUser] = useState(null);
+
+  useEffect(() => { base44.auth.me().then(setUser).catch(() => {}); }, []);
 
   const { data: trades = [], isLoading } = useQuery({
-    queryKey: ["paper-trades-dashboard"],
-    queryFn: () => base44.entities.PaperTrade.list("-created_date", 500),
+    queryKey: ["paper-trades-dashboard", user?.email],
+    queryFn: () => base44.entities.PaperTrade.filter({ created_by: user.email }, "-created_date", 500),
+    enabled: !!user,
   });
 
   const closedTrades = useMemo(() => trades.filter(t => t.status === "closed"), [trades]);

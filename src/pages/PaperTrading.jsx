@@ -109,7 +109,10 @@ export default function PaperTrading() {
     setBotRunning(true);
 
     const cfg = autoConfigRef.current;
-    const currentTrades = await base44.entities.PaperTrade.list("-created_date", 100);
+    const currentUser = await base44.auth.me();
+    const currentTrades = currentUser
+      ? await base44.entities.PaperTrade.filter({ created_by: currentUser.email }, "-created_date", 100)
+      : [];
     const openTrades = currentTrades.filter(t => t.status === "open");
     const isPerpetual = cfg.marketSource !== "spot";
     const pairs = isPerpetual
@@ -205,7 +208,10 @@ export default function PaperTrading() {
     }
 
     // --- Open new trades ---
-    const freshOpen = (await base44.entities.PaperTrade.list("-created_date", 100)).filter(t => t.status === "open");
+    const freshUser = await base44.auth.me();
+    const freshOpen = freshUser
+      ? (await base44.entities.PaperTrade.filter({ created_by: freshUser.email }, "-created_date", 100)).filter(t => t.status === "open")
+      : [];
     const openSymbols = new Set(freshOpen.map(t => t.symbol));
 
     if (freshOpen.length >= cfg.maxOpenTrades) {
