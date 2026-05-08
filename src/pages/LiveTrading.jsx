@@ -150,6 +150,9 @@ export default function LiveTrading() {
   const placeOrderMutation = useMutation({
     mutationFn: async () => {
       if (!activeKey || !user) throw new Error("No API key");
+      if (!balance || balance.availableBalance <= 0) {
+        throw new Error("Balanță insuficientă. Eliberează balanța înainte de a plasa noi ordine.");
+      }
       
       setPlacingOrder(true);
       try {
@@ -334,7 +337,7 @@ export default function LiveTrading() {
                 </div>
                 <Button 
                   onClick={() => placeOrderMutation.mutate()} 
-                  disabled={placingOrder || !activeKey} 
+                  disabled={placingOrder || !activeKey || !balance || balance.availableBalance <= 0} 
                   className="w-full bg-pump-strong hover:bg-pump-strong/90"
                 >
                   {placingOrder ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Zap className="w-4 h-4 mr-2" />}
