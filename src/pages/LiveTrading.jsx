@@ -43,6 +43,14 @@ export default function LiveTrading() {
     refetchInterval: 30000,
   });
 
+  // Fetch trades - MUST be before fetchOpenOrders
+  const { data: trades = [], isLoading } = useQuery({
+    queryKey: ["liveTrades", user?.email],
+    queryFn: () => base44.entities.LiveTrade.filter({ created_by: user.email }, "-created_date", 100),
+    enabled: !!user,
+    refetchInterval: 15000,
+  });
+
   useEffect(() => {
     if (apiKeys.length > 0 && !activeKey) {
       const active = apiKeys.find(k => k.is_active) || apiKeys[0];
@@ -218,14 +226,6 @@ export default function LiveTrading() {
         setPlacingOrder(false);
       }
     },
-  });
-
-  // Fetch trades
-  const { data: trades = [], isLoading } = useQuery({
-    queryKey: ["liveTrades", user?.email],
-    queryFn: () => base44.entities.LiveTrade.filter({ created_by: user.email }, "-created_date", 100),
-    enabled: !!user,
-    refetchInterval: 15000,
   });
 
   const openTrades = trades.filter(t => t.status === "open");
