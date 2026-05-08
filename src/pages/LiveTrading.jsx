@@ -181,11 +181,10 @@ export default function LiveTrading() {
 
   useEffect(() => {
     if (activeKey) {
-      fetchBalance();
       fetchPositions();
       initializeWebSocket();
     }
-  }, [activeKey, fetchBalance, fetchPositions, initializeWebSocket]);
+  }, [activeKey, fetchPositions, initializeWebSocket]);
 
   // Load market prices
   const loadPrices = useCallback(async () => {
@@ -297,19 +296,18 @@ export default function LiveTrading() {
                 variant="ghost" 
                 size="icon" 
                 className="h-7 w-7" 
-                onClick={fetchBalance} 
-                disabled={loadingBalance || !activeKey}
+                disabled={!activeKey}
               >
-                <RefreshCw className={`w-3 h-3 ${loadingBalance ? "animate-spin" : ""}`} />
+                <RefreshCw className={`w-3 h-3`} />
               </Button>
             </div>
-            {balance ? (
+            {balance && balance.availableBalance ? (
               <div className="space-y-1">
                 <p className="text-2xl font-bold font-mono">${balance.availableBalance?.toFixed(2)}</p>
                 <p className="text-xs text-muted-foreground">disponibil · Total: ${balance.totalWallet?.toFixed(2)}</p>
               </div>
             ) : (
-              <p className="text-muted-foreground text-sm">{activeKey ? "Se încarcă..." : "—"}</p>
+              <p className="text-muted-foreground text-sm">{activeKey ? "Conectare WebSocket..." : "—"}</p>
             )}
           </div>
 
