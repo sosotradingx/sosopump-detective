@@ -90,11 +90,59 @@ export default function LiveTrading() {
     setLoadingBalance(false);
   }, [activeKey, user, signRequest]);
 
+  // Fetch open orders from Binance
+  const fetchOpenOrders = useCallback(async () => {
+    if (!activeKey || !user) return;
+    try {
+      const decrypted = await base44.functions.invoke("decryptApiSecret", { keyId: activeKey.id });
+      const secret = decrypted.data.secret;
+      
+      const timestamp = Date.now();
+      const queryString = `timestamp=${timestamp}`;
+      const signature = await signRequest(queryString, secret);
+      
+      const response = await fetch(
+        `https://fapi.binance.com/fapi/v1/openOrders?${queryString}&signature=${signature}`,
+        { headers: { "X-MBX-APIKEY": activeKey.api_key } }
+      );
+      
+      if (!response.ok) return;
+      
+      const orders = await response.json();
+      // Sync open orders to database
+      for (const order of orders) {
+        const exists = trades.find(t => t.binance_order_id === order.orderId?.toString());
+        if (!exists) {
+          await base44.entities.LiveTrade.create({
+            symbol: order.symbol,
+            side: order.side,
+            status: "open",
+            entry_price: parseFloat(order.price),
+            quantity: parseFloat(order.origQty),
+            binance_order_id: order.orderId?.toString(),
+            notes: `Synced from Binance`,
+          });
+        }
+      }
+      queryClient.invalidateQueries({ queryKey: ["liveTrades"] });
+    } catch (e) {
+      console.error("Error fetching open orders:", e);
+    }
+  }, [activeKey, user, signRequest, trades, queryClient]);
+
   useEffect(() => {
-    if (activeKey) fetchBalance();
-    const interval = setInterval(() => fetchBalance(), 30000);
+    if (activeKey) {
+      fetchBalance();
+      fetchOpenOrders();
+    }
+    const interval = setInterval(() => {
+      if (activeKey) {
+        fetchBalance();
+        fetchOpenOrders();
+      }
+    }, 10000);
     return () => clearInterval(interval);
-  }, [activeKey, fetchBalance]);
+  }, [activeKey, fetchBalance, fetchOpenOrders]);
 
   // Load market prices
   const loadPrices = useCallback(async () => {
