@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { formatPrice, formatVolume, fetchKlines } from "./binanceApi";
+import { analyzePump } from "./pumpEngine";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -13,12 +14,17 @@ export default function PairDetailPanel({ pair, isFavorite, onToggleFavorite, on
   const [timeframe, setTimeframe] = useState("15m");
   const [klines, setKlines] = useState([]);
   const [loadingChart, setLoadingChart] = useState(false);
+  const [liveAnalysis, setLiveAnalysis] = useState(null);
 
   const loadChart = async (tf) => {
     if (!pair) return;
     setLoadingChart(true);
-    const data = await fetchKlines(pair.symbol, tf, 100, true);
+    const data = await fetchKlines(pair.symbol, tf, 150, true);
     setKlines(data);
+    if (data.length > 50) {
+      const analysis = analyzePump(data);
+      setLiveAnalysis(analysis);
+    }
     setLoadingChart(false);
   };
 
@@ -27,7 +33,7 @@ export default function PairDetailPanel({ pair, isFavorite, onToggleFavorite, on
   }, [pair?.symbol, timeframe]);
 
   if (!pair) return null;
-  const a = pair.analysis || {};
+  const a = liveAnalysis || pair.analysis || {};
   const positive = pair.priceChangePercent >= 0;
 
   return (
