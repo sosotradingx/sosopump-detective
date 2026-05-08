@@ -44,13 +44,29 @@ export default function ApiSettings() {
   const testConnection = async (keyRecord) => {
     setTesting(keyRecord.id);
     try {
-      const res = await base44.functions.invoke("binanceLiveTrade", {
-        action: "test",
-        api_key_id: keyRecord.id,
-      });
+      const isFutures = (keyRecord.market_type || "futures") === "futures";
+      const baseUrl = isFutures
+        ? "https://fapi.binance.com/fapi/v1/account"
+        : "https://api.binance.com/api/v3/account";
+      const timestamp = Date.now();
+      const queryString = `timestamp=${timestamp}`;
+
+      // Sign with HMAC-SHA256
+      const encoder = new TextEncoder();
+      const keyData = encoder.encode(keyRecord.api_secret);
+      const msgData = encoder.encode(queryString);
+      const cryptoKey = await crypto.subtle.importKey("raw", keyData, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+      const sigBuffer = await crypto.subtle.sign("HMAC", cryptoKey, msgData);
+      const sigHex = Array.from(new Uint8Array(sigBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+
+      const url = `${baseUrl}?${queryString}&signature=${sigHex}`;
+      const resp = await fetch(url, { headers: { "X-MBX-APIKEY": keyRecord.api_key } });
+      const data = await resp.json();
+
+      const success = resp.ok && !data.code;
       await base44.entities.UserApiKey.update(keyRecord.id, {
-        test_status: res.data?.success ? "ok" : "error",
-        test_message: res.data?.message || "",
+        test_status: success ? "ok" : "error",
+        test_message: success ? "Conexiune reușită ✓" : (data.msg || `Eroare ${resp.status}`),
         last_tested_at: new Date().toISOString(),
       });
       queryClient.invalidateQueries({ queryKey: ["userApiKeys"] });
