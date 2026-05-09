@@ -146,7 +146,7 @@ export default function ApiSettings() {
               </div>
             </div>
             <div>
-              <Label className="text-xs text-muted-foreground">Trading Passphrase (6 cifre) *</Label>
+              <Label className="text-xs text-muted-foreground">API Passphrase (7-32 caractere) *</Label>
               <div className="relative mt-1">
                 <Input
                   type={showPassphrase ? "text" : "password"}
