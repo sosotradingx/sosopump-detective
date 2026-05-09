@@ -66,6 +66,54 @@ Deno.serve(async (req) => {
         url = `https://fapi.binance.com/fapi/v1/order?${queryString}&signature=${await hmacSha256(queryString, apiSecret)}`;
         break;
 
+      case 'placeOrderWithSlTp': {
+        // Place market order + optional SL + TP, all from backend to avoid CORS
+        const { symbol, side, quantity, stopLoss, takeProfit, hedgeMode, positionSide: ps } = params;
+        const closeSide = side === 'BUY' ? 'SELL' : 'BUY';
+        const closePositionSide = side === 'BUY' ? 'LONG' : 'SHORT';
+        const baseOrderParams = hedgeMode ? { positionSide: ps } : {};
+        const closeParams = hedgeMode
+          ? { positionSide: closePositionSide, quantity: quantity.toString() }
+          : { reduceOnly: 'true', quantity: quantity.toString() };
+
+        // 1. Main MARKET order
+        const mainQs = new URLSearchParams({ symbol, side, type: 'MARKET', quantity: quantity.toString(), ...baseOrderParams, timestamp: Date.now().toString() }).toString();
+        const mainSig = await hmacSha256(mainQs, apiSecret);
+        const mainRes = await fetch(`https://fapi.binance.com/fapi/v1/order?${mainQs}&signature=${mainSig}`, {
+          method: 'POST', headers: { 'X-MBX-APIKEY': key.api_key }
+        });
+        const mainData = await mainRes.json();
+        if (!mainRes.ok) {
+          return Response.json({ success: false, error: mainData.msg || 'Main order failed' });
+        }
+
+        const results = { mainOrder: mainData, slOrder: null, tpOrder: null, slError: null, tpError: null };
+
+        // 2. Stop Loss order
+        if (stopLoss > 0) {
+          const slQs = new URLSearchParams({ symbol, side: closeSide, type: 'STOP_MARKET', stopPrice: stopLoss.toString(), ...closeParams, timestamp: Date.now().toString() }).toString();
+          const slSig = await hmacSha256(slQs, apiSecret);
+          const slRes = await fetch(`https://fapi.binance.com/fapi/v1/order?${slQs}&signature=${slSig}`, {
+            method: 'POST', headers: { 'X-MBX-APIKEY': key.api_key }
+          });
+          const slData = await slRes.json();
+          if (slRes.ok) { results.slOrder = slData; } else { results.slError = slData.msg || 'SL failed'; }
+        }
+
+        // 3. Take Profit order
+        if (takeProfit > 0) {
+          const tpQs = new URLSearchParams({ symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET', stopPrice: takeProfit.toString(), ...closeParams, timestamp: Date.now().toString() }).toString();
+          const tpSig = await hmacSha256(tpQs, apiSecret);
+          const tpRes = await fetch(`https://fapi.binance.com/fapi/v1/order?${tpQs}&signature=${tpSig}`, {
+            method: 'POST', headers: { 'X-MBX-APIKEY': key.api_key }
+          });
+          const tpData = await tpRes.json();
+          if (tpRes.ok) { results.tpOrder = tpData; } else { results.tpError = tpData.msg || 'TP failed'; }
+        }
+
+        return Response.json({ success: true, data: results });
+      }
+
       case 'cancelOrder':
         method = 'DELETE';
         queryString = new URLSearchParams({ 
@@ -75,6 +123,19 @@ Deno.serve(async (req) => {
         }).toString();
         url = `https://fapi.binance.com/fapi/v1/order?${queryString}&signature=${await hmacSha256(queryString, apiSecret)}`;
         break;
+
+      case 'cancelAllOrders':
+        method = 'DELETE';
+        queryString = new URLSearchParams({ symbol: params.symbol, timestamp: Date.now().toString() }).toString();
+        url = `https://fapi.binance.com/fapi/v1/allOpenOrders?${queryString}&signature=${await hmacSha256(queryString, apiSecret)}`;
+        break;
+
+      case 'getPositionSideDual': {
+        const ts2 = Date.now().toString();
+        const qs2 = new URLSearchParams({ timestamp: ts2 }).toString();
+        url = `https://fapi.binance.com/fapi/v1/positionSide/dual?${qs2}&signature=${await hmacSha256(qs2, apiSecret)}`;
+        break;
+      }
 
       case 'getOpenOrders':
         const tsOpenOrders = Date.now().toString();
