@@ -387,6 +387,67 @@ export default function PaperTrading() {
     return () => clearTimeout(autoIntervalRef.current);
   }, [autoEnabled]);
 
+  // --- SL/TP Monitor: verifică continuu la 30s, independent de auto-bot ---
+  const slTpMonitorRef = useRef(false);
+  useEffect(() => {
+    if (!user || !trades.length) return;
+
+    const checkSlTp = async () => {
+      if (slTpMonitorRef.current) return;
+      slTpMonitorRef.current = true;
+      const openTrades = trades.filter(t => t.status === "open");
+      if (!openTrades.length) { slTpMonitorRef.current = false; return; }
+
+      // Fetch prețuri live pentru toate simbolurile deschise
+      const symbols = [...new Set(openTrades.map(t => t.symbol))];
+      const livePrice = {};
+      await Promise.all(symbols.map(async (sym) => {
+        try {
+          const r = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${sym}`);
+          const d = await r.json();
+          if (d.price) livePrice[sym] = parseFloat(d.price);
+        } catch {
+          try {
+            const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`);
+            const d = await r.json();
+            if (d.price) livePrice[sym] = parseFloat(d.price);
+          } catch {}
+        }
+      }));
+
+      let anyChanged = false;
+      for (const trade of openTrades) {
+        const cur = livePrice[trade.symbol];
+        if (!cur) continue;
+        const pnlPct = ((cur - trade.entry_price) / trade.entry_price) * 100;
+        const pnlUsd = (cur - trade.entry_price) * trade.quantity;
+        let reason = null;
+
+        if (trade.stop_loss > 0 && cur <= trade.stop_loss) reason = "stop_loss";
+        else if (trade.take_profit > 0 && cur >= trade.take_profit) reason = "take_profit";
+
+        if (reason) {
+          await base44.entities.PaperTrade.update(trade.id, {
+            status: "closed",
+            exit_price: cur,
+            pnl_percent: Math.round(pnlPct * 100) / 100,
+            pnl_usd: Math.round(pnlUsd * 100) / 100,
+            exit_reason: reason,
+          });
+          anyChanged = true;
+          setBotLog(prev => [`[${new Date().toLocaleTimeString("ro-RO")}] ${reason === "stop_loss" ? "🔴 SL" : "🟢 TP"} ${trade.symbol} @ $${cur.toFixed(4)} | ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%`, ...prev.slice(0, 29)]);
+        }
+      }
+
+      if (anyChanged) queryClient.invalidateQueries({ queryKey: ["paper-trades"] });
+      slTpMonitorRef.current = false;
+    };
+
+    checkSlTp();
+    const interval = setInterval(checkSlTp, 30000);
+    return () => clearInterval(interval);
+  }, [trades, user, queryClient]);
+
   const openTrades = trades.filter(t => t.status === "open");
   const closedTrades = trades.filter(t => t.status === "closed");
 
