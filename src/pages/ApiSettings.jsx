@@ -49,20 +49,18 @@ export default function ApiSettings() {
       const decrypted = await base44.functions.invoke("decryptApiSecret", { keyId: keyRecord.id });
       const secret = decrypted.data.secret;
 
-      // Test with direct browser request - Binance API
-      const timestamp = Date.now();
-      const queryString = `timestamp=${timestamp}`;
-      const signature = await signRequest(queryString, secret);
-      
-      const response = await fetch(
-        `https://fapi.binance.com/fapi/v2/account?${queryString}&signature=${signature}`,
-        {
-          headers: { "X-MBX-APIKEY": keyRecord.api_key }
+      // Test with KuCoin API
+      const response = await fetch('https://api-futures.kucoin.com/api/v1/accounts', {
+        headers: {
+          'KC-API-KEY': keyRecord.api_key,
+          'KC-API-SECRET': secret,
+          'KC-API-PASSPHRASE': secret,
+          'Accept': 'application/json'
         }
-      );
+      });
 
       if (!response.ok) {
-        throw new Error(`Binance API: ${response.statusText} (${response.status})`);
+        throw new Error(`KuCoin API: ${response.statusText} (${response.status})`);
       }
 
       await base44.entities.UserApiKey.update(keyRecord.id, {
@@ -110,7 +108,7 @@ export default function ApiSettings() {
           <Key className="w-6 h-6 text-primary" />
           <div>
             <h1 className="text-2xl font-bold">🔑 API Keys</h1>
-            <p className="text-sm text-muted-foreground">Gestionează cheile API Binance</p>
+            <p className="text-sm text-muted-foreground">Gestionează cheile API KuCoin</p>
           </div>
         </div>
         <Button onClick={() => setShowForm(!showForm)} className="bg-primary">
@@ -120,14 +118,14 @@ export default function ApiSettings() {
 
       {/* Security Warning */}
       <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 flex items-start gap-3">
-        <ShieldAlert className="w-5 h-5 text-yellow-400 mt-0.5 flex-shrink-0" />
-        <div className="text-sm">
-          <p className="font-semibold text-yellow-400">Atenție la Securitate</p>
-          <p className="text-muted-foreground mt-1">
-            Folosește chei API cu permisiuni <strong>doar pentru Futures Trading</strong>. 
-            Dezactivează opțiunile de Withdrawal. Cheile sunt stocate în baza de date a aplicației.
-          </p>
-        </div>
+       <ShieldAlert className="w-5 h-5 text-yellow-400 mt-0.5 flex-shrink-0" />
+       <div className="text-sm">
+         <p className="font-semibold text-yellow-400">Atenție la Securitate</p>
+         <p className="text-muted-foreground mt-1">
+           Folosește chei API KuCoin cu permisiuni <strong>doar pentru Futures Trading</strong>. 
+           Dezactivează opțiunile de Withdrawal. Cheile sunt stocate criptat în baza de date a aplicației.
+         </p>
+       </div>
       </div>
 
       {/* Add Form */}
@@ -142,7 +140,7 @@ export default function ApiSettings() {
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">API Key *</Label>
-              <Input placeholder="Binance API Key" value={form.api_key}
+              <Input placeholder="KuCoin API Key" value={form.api_key}
                 onChange={e => setF("api_key", e.target.value)} className="bg-secondary mt-1 font-mono text-xs" required />
             </div>
             <div>
@@ -150,7 +148,7 @@ export default function ApiSettings() {
               <div className="relative mt-1">
                 <Input
                   type={showSecret ? "text" : "password"}
-                  placeholder="Binance API Secret"
+                  placeholder="KuCoin API Secret"
                   value={form.api_secret}
                   onChange={e => setF("api_secret", e.target.value)}
                   className="bg-secondary font-mono text-xs pr-10" required

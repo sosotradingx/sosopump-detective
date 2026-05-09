@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { base44 } from "@/api/base44Client";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { fetchPerpetualPairs, fetchTopPairs, fetchKlines, formatPrice } from "../components/scanner/binanceApi";
+import { fetchPerpetualPairs, fetchTopPairs, fetchKlines, formatPrice } from "../components/scanner/kucoinApi";
 import { analyzePump } from "../components/scanner/pumpEngine";
 import AutoTradeSettings from "../components/papertrading/AutoTradeSettings";
 import { Button } from "@/components/ui/button";
@@ -17,23 +17,12 @@ import PlanGate from "@/components/PlanGate";
 
 // --- Helpers ---
 
-// Fetch LOT_SIZE stepSize for a symbol from Binance exchangeInfo (public endpoint, no CORS issue)
+// KuCoin uses standard lot sizes - 0.001 is default
 const stepSizeCache = {};
 async function getStepSize(symbol) {
   if (stepSizeCache[symbol]) return stepSizeCache[symbol];
-  try {
-    const res = await fetch(`https://fapi.binance.com/fapi/v1/exchangeInfo`);
-    const data = await res.json();
-    const sym = (data.symbols || []).find(s => s.symbol === symbol);
-    if (sym) {
-      const lotFilter = sym.filters.find(f => f.filterType === "LOT_SIZE");
-      if (lotFilter) {
-        const step = parseFloat(lotFilter.stepSize);
-        stepSizeCache[symbol] = step;
-        return step;
-      }
-    }
-  } catch {}
+  // KuCoin generally uses 0.001 for most contracts, no need to fetch
+  stepSizeCache[symbol] = 0.001;
   return 0.001;
 }
 
@@ -44,7 +33,7 @@ function floorToStep(qty, step) {
   return parseFloat((Math.floor(qty / step) * step).toFixed(precision));
 }
 
-// --- Direct Binance signed calls from frontend ---
+// --- KuCoin signed calls ---
 async function hmacSha256(message, secret) {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -52,14 +41,28 @@ async function hmacSha256(message, secret) {
   return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function binanceRequest(apiKey, apiSecret, method, path, params = {}) {
-  const qs = new URLSearchParams({ ...params, timestamp: Date.now().toString() }).toString();
-  const sig = await hmacSha256(qs, apiSecret);
-  const url = `https://fapi.binance.com${path}?${qs}&signature=${sig}`;
-  const res = await fetch(url, { method, headers: { 'X-MBX-APIKEY': apiKey } });
+async function kucoinRequest(apiKey, apiSecret, method, path, params = {}) {
+  const timestamp = Date.now();
+  const body = method === 'GET' ? null : JSON.stringify(params);
+  const message = `${timestamp}${method}${path}${body || ''}`;
+  const sig = await hmacSha256(message, apiSecret);
+  
+  const url = `https://api-futures.kucoin.com${path}`;
+  const res = await fetch(url, {
+    method,
+    headers: {
+      'KC-API-KEY': apiKey,
+      'KC-API-SECRET': apiSecret,
+      'KC-API-PASSPHRASE': apiSecret,
+      'KC-API-TIMESTAMP': timestamp.toString(),
+      'KC-API-SIGN': sig,
+      'Content-Type': 'application/json'
+    },
+    body
+  });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.msg || `Binance error ${res.status}`);
-  return data;
+  if (!res.ok) throw new Error(data.msg || `KuCoin error ${res.status}`);
+  return data.data || data;
 }
 
 async function getDecryptedCreds(keyId) {
@@ -67,36 +70,31 @@ async function getDecryptedCreds(keyId) {
   return { apiKey: res.data.api_key, apiSecret: res.data.secret };
 }
 
-async function placeMarketWithSlTp(creds, symbol, side, quantity, stopLoss, takeProfit, hedgeMode) {
+async function placeMarketWithSlTp(creds, symbol, side, quantity, stopLoss, takeProfit) {
   const { apiKey, apiSecret } = creds;
-  const closeSide = side === "BUY" ? "SELL" : "BUY";
-  const positionSide = side === "BUY" ? "LONG" : "SHORT";
-  const closeParams = hedgeMode
-    ? { positionSide, quantity: quantity.toString() }
-    : { reduceOnly: "true", quantity: quantity.toString() };
-  const openParams = hedgeMode ? { positionSide } : {};
+  const closeSide = side === "BUY" ? "sell" : "buy";
 
-  // 1. Main MARKET order
-  const mainOrder = await binanceRequest(apiKey, apiSecret, 'POST', '/fapi/v1/order', {
-    symbol, side, type: 'MARKET', quantity: quantity.toString(), ...openParams
+  // 1. Main MARKET order via KuCoin
+  const mainOrder = await kucoinRequest(apiKey, apiSecret, 'POST', '/api/v1/orders', {
+    symbol, side: side.toLowerCase(), type: 'market', size: quantity.toString()
   });
 
   const results = { mainOrder, slOrder: null, tpOrder: null, slError: null, tpError: null };
 
-  // 2. Stop Loss
+  // 2. Stop Loss (stop order on KuCoin)
   if (stopLoss > 0) {
     try {
-      results.slOrder = await binanceRequest(apiKey, apiSecret, 'POST', '/fapi/v1/order', {
-        symbol, side: closeSide, type: 'STOP_MARKET', stopPrice: stopLoss.toString(), ...closeParams
+      results.slOrder = await kucoinRequest(apiKey, apiSecret, 'POST', '/api/v1/orders', {
+        symbol, side: closeSide, type: 'stop', stopPrice: stopLoss.toString(), size: quantity.toString()
       });
     } catch (e) { results.slError = e.message; }
   }
 
-  // 3. Take Profit
+  // 3. Take Profit (limit order)
   if (takeProfit > 0) {
     try {
-      results.tpOrder = await binanceRequest(apiKey, apiSecret, 'POST', '/fapi/v1/order', {
-        symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET', stopPrice: takeProfit.toString(), ...closeParams
+      results.tpOrder = await kucoinRequest(apiKey, apiSecret, 'POST', '/api/v1/orders', {
+        symbol, side: closeSide, type: 'limit', price: takeProfit.toString(), size: quantity.toString()
       });
     } catch (e) { results.tpError = e.message; }
   }
@@ -104,20 +102,18 @@ async function placeMarketWithSlTp(creds, symbol, side, quantity, stopLoss, take
   return results;
 }
 
-async function closePosition(creds, symbol, positionAmt, hedgeMode) {
+async function closePosition(creds, symbol, positionAmt) {
   const { apiKey, apiSecret } = creds;
   const qty = Math.abs(parseFloat(positionAmt));
-  const side = parseFloat(positionAmt) > 0 ? "SELL" : "BUY";
-  const extra = hedgeMode ? { positionSide: parseFloat(positionAmt) > 0 ? "LONG" : "SHORT" } : {};
-  return binanceRequest(apiKey, apiSecret, 'POST', '/fapi/v1/order', {
-    symbol, side, type: 'MARKET', quantity: qty.toString(), ...extra,
-    ...(hedgeMode ? {} : { reduceOnly: 'true' })
+  const side = parseFloat(positionAmt) > 0 ? "sell" : "buy";
+  return kucoinRequest(apiKey, apiSecret, 'POST', '/api/v1/orders', {
+    symbol, side, type: 'market', size: qty.toString()
   });
 }
 
 async function cancelAllOrders(creds, symbol) {
   try {
-    await binanceRequest(creds.apiKey, creds.apiSecret, 'DELETE', '/fapi/v1/allOpenOrders', { symbol });
+    await kucoinRequest(creds.apiKey, creds.apiSecret, 'DELETE', '/api/v1/orders', { symbol });
   } catch (e) { console.warn('cancelAllOrders:', e.message); }
 }
 
@@ -208,15 +204,10 @@ export default function LiveTrading() {
     getDecryptedCreds(activeKey.id).then(creds => {
       setCredentials(creds);
       credentialsRef.current = creds;
-      // Detect hedge mode
-      binanceRequest(creds.apiKey, creds.apiSecret, 'GET', '/fapi/v1/positionSide/dual', {})
-        .then(data => {
-          const hedge = data?.dualSidePosition === true;
-          setHedgeMode(hedge);
-          hedgeModeRef.current = hedge;
-          addLog(`ℹ️ Mod poziție: ${hedge ? "Hedge (Dual)" : "One-Way"}`);
-        })
-        .catch(() => addLog(`ℹ️ Mod poziție: One-Way (implicit)`));
+      // KuCoin doesn't use hedge mode like Binance
+      setHedgeMode(false);
+      hedgeModeRef.current = false;
+      addLog(`ℹ️ Conectat la KuCoin Futures`);
     }).catch(e => addLog(`❌ Eroare credențiale: ${e.message}`));
   }, [activeKey]);
 
@@ -227,15 +218,13 @@ export default function LiveTrading() {
     if (!creds?.apiKey) return;
     setLoadingBalance(true);
     try {
-      const assets = await binanceRequest(creds.apiKey, creds.apiSecret, 'GET', '/fapi/v2/balance', {});
-      const list = Array.isArray(assets) ? assets : [];
-      const mainAsset = list.reduce((best, a) =>
-        parseFloat(a.availableBalance || 0) > parseFloat(best.availableBalance || 0) ? a : best
-      , { availableBalance: "0", balance: "0", asset: "" });
+      const accts = await kucoinRequest(creds.apiKey, creds.apiSecret, 'GET', '/api/v1/accounts', {});
+      const accounts = Array.isArray(accts) ? accts : accts?.accounts || [];
+      const mainAcct = accounts.find(a => a.type === 'MARGIN') || accounts[0] || {};
       setBalance({
-        availableBalance: parseFloat(mainAsset.availableBalance || 0),
-        totalWallet: parseFloat(mainAsset.balance || 0),
-        asset: mainAsset.asset
+        availableBalance: parseFloat(mainAcct.available || 0),
+        totalWallet: parseFloat(mainAcct.balance || 0),
+        asset: 'USDT'
       });
     } catch (e) { addLog(`❌ Balanță: ${e.message}`); }
     setLoadingBalance(false);
@@ -245,8 +234,9 @@ export default function LiveTrading() {
     const creds = credentialsRef.current;
     if (!creds?.apiKey) return;
     try {
-      const data = await binanceRequest(creds.apiKey, creds.apiSecret, 'GET', '/fapi/v2/positionRisk', {});
-      setPositions((data || []).filter(p => parseFloat(p.positionAmt) !== 0));
+      const data = await kucoinRequest(creds.apiKey, creds.apiSecret, 'GET', '/api/v1/positions', {});
+      const positions = Array.isArray(data) ? data : data?.positions || [];
+      setPositions(positions.filter(p => parseFloat(p.currentQty || 0) !== 0));
     } catch (e) { console.error("Positions error:", e.message); }
   }, []);
 
@@ -273,8 +263,9 @@ export default function LiveTrading() {
     // Fetch live positions directly
     let livePositions = [];
     try {
-      const posData = await binanceRequest(creds.apiKey, creds.apiSecret, 'GET', '/fapi/v2/positionRisk', {});
-      livePositions = (posData || []).filter(p => parseFloat(p.positionAmt) !== 0);
+      const posData = await kucoinRequest(creds.apiKey, creds.apiSecret, 'GET', '/api/v1/positions', {});
+      const positions = Array.isArray(posData) ? posData : posData?.positions || [];
+      livePositions = positions.filter(p => parseFloat(p.currentQty || 0) !== 0);
       setPositions(livePositions);
     } catch (e) {
       addLog(`❌ Poziții: ${e.message}`);
@@ -285,8 +276,8 @@ export default function LiveTrading() {
 
     // --- Check exit conditions for open positions ---
     for (const pos of livePositions) {
-      const curPrice = parseFloat(pos.markPrice || pos.entryPrice);
-      const entryPrice = parseFloat(pos.entryPrice);
+      const curPrice = parseFloat(pos.currentPrice || pos.avgEntryPrice);
+      const entryPrice = parseFloat(pos.avgEntryPrice);
       const pnlPct = ((curPrice - entryPrice) / entryPrice) * 100;
 
       // Auto-exit on low score
@@ -308,8 +299,9 @@ export default function LiveTrading() {
 
     // Refresh positions after exits
     try {
-      const posData = await binanceRequest(creds.apiKey, creds.apiSecret, 'GET', '/fapi/v2/positionRisk', {});
-      livePositions = (posData || []).filter(p => parseFloat(p.positionAmt) !== 0);
+      const posData = await kucoinRequest(creds.apiKey, creds.apiSecret, 'GET', '/api/v1/positions', {});
+      const positions = Array.isArray(posData) ? posData : posData?.positions || [];
+      livePositions = positions.filter(p => parseFloat(p.currentQty || 0) !== 0);
       setPositions(livePositions);
     } catch {}
 
@@ -378,7 +370,7 @@ export default function LiveTrading() {
             : 0;
 
           try {
-            const ord = await placeMarketWithSlTp(creds, pair.symbol, "BUY", quantity, stopLoss, takeProfit, hedgeModeRef.current);
+            const ord = await placeMarketWithSlTp(creds, pair.symbol, "BUY", quantity, stopLoss, takeProfit);
             openSymbols.add(pair.symbol);
             opened++;
             const slStatus = ord?.slOrder ? `SL ✓` : ord?.slError ? `SL ✗(${ord.slError})` : "SL —";
@@ -425,27 +417,26 @@ export default function LiveTrading() {
   // Place manual limit order
   const placeOrderMutation = useMutation({
     mutationFn: async () => {
-      if (!credentials?.apiKey) throw new Error("Credențialele nu sunt disponibile");
-      setPlacingOrder(true);
-      try {
-        await binanceRequest(credentials.apiKey, credentials.apiSecret, 'POST', '/fapi/v1/order', {
-          symbol: orderParams.symbol,
-          side: orderParams.side,
-          type: "LIMIT",
-          timeInForce: "GTC",
-          quantity: orderParams.quantity.toString(),
-          price: orderParams.price.toString(),
-        });
-        addLog(`✅ Ordine LIMIT plasată: ${orderParams.symbol} ${orderParams.side} qty:${orderParams.quantity} @${orderParams.price}`);
-        setOrderDialog(false);
-        fetchPositions();
-      } catch (e) {
-        addLog(`❌ Eroare ordine: ${e.message}`);
-        throw e;
-      } finally {
-        setPlacingOrder(false);
-      }
-    },
+       if (!credentials?.apiKey) throw new Error("Credențialele nu sunt disponibile");
+       setPlacingOrder(true);
+       try {
+         await kucoinRequest(credentials.apiKey, credentials.apiSecret, 'POST', '/api/v1/orders', {
+           symbol: orderParams.symbol,
+           side: orderParams.side.toLowerCase(),
+           type: "limit",
+           price: orderParams.price.toString(),
+           size: orderParams.quantity.toString(),
+         });
+         addLog(`✅ Ordine LIMIT plasată: ${orderParams.symbol} ${orderParams.side} qty:${orderParams.quantity} @${orderParams.price}`);
+         setOrderDialog(false);
+         fetchPositions();
+       } catch (e) {
+         addLog(`❌ Eroare ordine: ${e.message}`);
+         throw e;
+       } finally {
+         setPlacingOrder(false);
+       }
+     },
   });
 
   const handleClosePosition = async (pos) => {
@@ -470,7 +461,7 @@ export default function LiveTrading() {
           <Zap className="w-6 h-6 text-primary" />
           <div>
             <h1 className="text-2xl font-bold">⚡ Live Trading</h1>
-            <p className="text-sm text-muted-foreground">Tranzacții reale pe Binance Futures</p>
+            <p className="text-sm text-muted-foreground">Tranzacții reale pe KuCoin Futures</p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -535,7 +526,7 @@ export default function LiveTrading() {
           {/* Balance */}
           <div className="bg-card border border-border rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-mono text-muted-foreground uppercase">Balanță Binance</p>
+              <p className="text-xs font-mono text-muted-foreground uppercase">Balanță KuCoin</p>
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={fetchBalance} disabled={loadingBalance || !credentials}>
                 <RefreshCw className={`w-3 h-3 ${loadingBalance ? "animate-spin" : ""}`} />
               </Button>
