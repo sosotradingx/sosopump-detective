@@ -37,6 +37,33 @@ async function binanceFetch(path, apiKey, apiSecret, extraParams = {}, method = 
   return data;
 }
 
+// Fetch LOT_SIZE stepSize for a symbol from Binance exchangeInfo
+const stepSizeCache = {};
+async function getStepSize(symbol) {
+  if (stepSizeCache[symbol]) return stepSizeCache[symbol];
+  try {
+    const res = await fetch(`https://fapi.binance.com/fapi/v1/exchangeInfo`);
+    const data = await res.json();
+    const sym = (data.symbols || []).find(s => s.symbol === symbol);
+    if (sym) {
+      const lotFilter = sym.filters.find(f => f.filterType === "LOT_SIZE");
+      if (lotFilter) {
+        const step = parseFloat(lotFilter.stepSize);
+        stepSizeCache[symbol] = step;
+        return step;
+      }
+    }
+  } catch {}
+  return 0.001;
+}
+
+// Round quantity down to the nearest stepSize
+function floorToStep(qty, step) {
+  if (!step || step === 0) return qty;
+  const precision = Math.max(0, Math.round(-Math.log10(step)));
+  return parseFloat((Math.floor(qty / step) * step).toFixed(precision));
+}
+
 // Detect if account uses Hedge Mode
 async function isHedgeMode(creds) {
   try {
@@ -334,13 +361,16 @@ export default function LiveTrading() {
 
         if (analysis.totalScore >= cfg.minScore) {
           const price = pair.price;
-          const precisionFactor = price < 0.001 ? 1e10 : price < 0.01 ? 1e8 : price < 1 ? 1e6 : 1e4;
-          const quantity = Math.floor((cfg.tradeSize / price) * 1000) / 1000;
+          const stepSize = await getStepSize(pair.symbol);
+          const rawQty = cfg.tradeSize / price;
+          const quantity = floorToStep(rawQty, stepSize);
+          if (quantity <= 0) continue;
+          const pricePrecision = price < 0.0001 ? 8 : price < 0.01 ? 6 : price < 1 ? 5 : price < 100 ? 4 : 2;
           const stopLoss = cfg.autoSL
-            ? Math.round(price * (1 - cfg.stopLossPct / 100) * precisionFactor) / precisionFactor
+            ? parseFloat((price * (1 - cfg.stopLossPct / 100)).toFixed(pricePrecision))
             : 0;
           const takeProfit = cfg.autoTP
-            ? Math.round(price * (1 + cfg.takeProfitPct / 100) * precisionFactor) / precisionFactor
+            ? parseFloat((price * (1 + cfg.takeProfitPct / 100)).toFixed(pricePrecision))
             : 0;
 
           try {
