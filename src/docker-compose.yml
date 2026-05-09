@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: soso-pump-detector
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      BASE44_APP_ID: ${BASE44_APP_ID}
+      KUCOIN_API_KEY: ${KUCOIN_API_KEY}
+      KUCOIN_API_SECRET: ${KUCOIN_API_SECRET}
+    restart: unless-stopped
+    networks:
+      - soso-network
+
+networks:
+  soso-network:
+    driver: bridge
