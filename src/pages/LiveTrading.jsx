@@ -407,7 +407,7 @@ export default function LiveTrading() {
   useEffect(() => { runAutoBotRef.current = runAutoBot; }, [runAutoBot]);
 
   useEffect(() => {
-    if (!autoEnabled) { clearTimeout(autoIntervalRef.current); return; }
+    if (!autoEnabled || !credentials) { clearTimeout(autoIntervalRef.current); return; }
     runAutoBotRef.current();
     const scheduleNext = () => {
       const ms = tfToMs(autoConfigRef.current.timeframe);
@@ -415,7 +415,7 @@ export default function LiveTrading() {
     };
     scheduleNext();
     return () => clearTimeout(autoIntervalRef.current);
-  }, [autoEnabled]);
+  }, [autoEnabled, credentials]);
 
   // Place manual limit order
   const placeOrderMutation = useMutation({
@@ -473,7 +473,7 @@ export default function LiveTrading() {
           <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${autoEnabled ? "bg-pump-strong/10 border-pump-strong/40" : "bg-secondary border-border"}`}>
             <Bot className={`w-4 h-4 ${autoEnabled ? "text-pump-strong" : "text-muted-foreground"}`} />
             <span className="text-xs font-mono">Auto-Bot</span>
-            <Switch checked={autoEnabled} onCheckedChange={setAutoEnabled} disabled={!credentials} />
+            <Switch checked={autoEnabled} onCheckedChange={setAutoEnabled} />
             {botRunning && <Loader2 className="w-3 h-3 animate-spin text-pump-strong" />}
           </div>
           <Button variant="outline" size="sm" onClick={() => setShowAutoSettings(true)}>
