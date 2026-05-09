@@ -70,28 +70,40 @@ export default function LiveTrading() {
     }
   }, [apiKeys, activeKey]);
 
-  // Fetch balance via backend (no geo-restrictions)
+  const [geoBlocked, setGeoBlocked] = useState(false);
+
+  // Fetch balance via backend
   const fetchBalance = useCallback(async () => {
     if (!activeKey || !user) return;
     setLoadingBalance(true);
     try {
       const res = await base44.functions.invoke("binanceApi", { action: "getBalance", keyId: activeKey.id });
-      if (!res.data.success) throw new Error(res.data.error || "Failed to fetch balance");
-      const data = res.data.data;
+      if (!res.data.success) {
+        const err = res.data.error || "";
+        if (err.includes("restricted location") || err.includes("Eligibility")) {
+          setGeoBlocked(true);
+        }
+        throw new Error(err || "Failed to fetch balance");
+      }
+      setGeoBlocked(false);
+      const assets = res.data.data || [];
+      const usdt = assets.find(a => a.asset === "USDT") || {};
       setBalance({
-        availableBalance: parseFloat(data.availableBalance || 0),
-        totalWallet: parseFloat(data.totalWalletBalance || 0),
+        availableBalance: parseFloat(usdt.availableBalance || 0),
+        totalWallet: parseFloat(usdt.balance || 0),
       });
       setBotLog(`✅ Balanță actualizată`);
     } catch (e) {
-      setBotLog(`❌ Eroare balanță: ${e.message}`);
+      if (!e.message.includes("restricted location") && !e.message.includes("Eligibility")) {
+        setBotLog(`❌ Eroare: ${e.message}`);
+      }
     }
     setLoadingBalance(false);
   }, [activeKey, user]);
 
-  // Fetch positions via backend (no geo-restrictions)
+  // Fetch positions via backend
   const fetchPositions = useCallback(async () => {
-    if (!activeKey || !user) return;
+    if (!activeKey || !user || geoBlocked) return;
     try {
       const res = await base44.functions.invoke("binanceApi", { action: "getPositionRisk", keyId: activeKey.id });
       if (!res.data.success) throw new Error(res.data.error);
@@ -100,19 +112,19 @@ export default function LiveTrading() {
     } catch (e) {
       console.error("Error fetching positions:", e);
     }
-  }, [activeKey, user]);
+  }, [activeKey, user, geoBlocked]);
 
-  // Poll balance + positions every 10s via backend
+  // Poll balance + positions every 15s (stop if geo-blocked)
   useEffect(() => {
-    if (!activeKey) return;
+    if (!activeKey || geoBlocked) return;
     fetchBalance();
     fetchPositions();
     const interval = setInterval(() => {
       fetchBalance();
       fetchPositions();
-    }, 10000);
+    }, 15000);
     return () => clearInterval(interval);
-  }, [activeKey, fetchBalance, fetchPositions]);
+  }, [activeKey, geoBlocked, fetchBalance, fetchPositions]);
 
   // Load market prices
   const loadPrices = useCallback(async () => {
@@ -210,6 +222,13 @@ export default function LiveTrading() {
       {!activeKey && (
         <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4 text-sm text-destructive">
           ⚠️ Nu ai nicio cheie API activă. Mergi la <strong>API Keys</strong> pentru a adăuga una.
+        </div>
+      )}
+
+      {geoBlocked && (
+        <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-4 text-sm text-amber-400">
+          <strong>⚠️ Binance blochează accesul din această regiune (eroare 451)</strong>
+          <p className="mt-1 text-amber-300/80">Serverul aplicației este blocat de Binance din motive geografice. Binance restricționează accesul API din anumite centre de date cloud. Contactează suportul Binance sau folosește un cont cu acces API activ dintr-o regiune permisă.</p>
         </div>
       )}
 

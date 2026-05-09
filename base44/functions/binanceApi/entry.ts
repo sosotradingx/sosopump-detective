@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
         const now = Date.now();
         queryString = new URLSearchParams({ timestamp: now.toString() }).toString();
         const signature = await hmacSha256(queryString, apiSecret);
-        url = `https://fapi.binance.com/fapi/v1/account?${queryString}&signature=${signature}`;
+        url = `https://fapi.binance.com/fapi/v2/balance?${queryString}&signature=${signature}`;
         break;
       }
 
