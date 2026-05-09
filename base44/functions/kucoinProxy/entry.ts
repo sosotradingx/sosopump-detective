@@ -26,15 +26,26 @@ Deno.serve(async (req) => {
       throw new Error('Missing API credentials');
     }
 
-    // Sign request
+    // Build request
     const timestamp = Date.now();
-    const body = method === 'GET' ? null : JSON.stringify(params);
-    const message = `${timestamp}${method}${path}${body || ''}`;
+    let url = `https://api-futures.kucoin.com${path}`;
+    let body = null;
+    let queryString = '';
+
+    if (method === 'GET' && Object.keys(params).length > 0) {
+      queryString = new URLSearchParams(params).toString();
+      url += '?' + queryString;
+    } else if (method !== 'GET') {
+      body = JSON.stringify(params);
+    }
+
+    // Sign request
+    const message = `${timestamp}${method}${path}${queryString || (body || '')}`;
     const signature = await hmacSha256(message, apiSecret);
     const passphraseHash = await hmacSha256(apiPassphrase, apiSecret);
 
     // Make KuCoin request
-    const kucoinRes = await fetch(`https://api-futures.kucoin.com${path}`, {
+    const kucoinRes = await fetch(url, {
       method,
       headers: {
         'KC-API-KEY': apiKey,
