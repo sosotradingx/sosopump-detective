@@ -12,11 +12,35 @@ import { Loader2, Zap, Activity, RefreshCw, AlertTriangle, DollarSign } from "lu
 import { useSubscription } from "@/hooks/useSubscription";
 import PlanGate from "@/components/PlanGate";
 
+// Client-side HMAC-SHA256 using Web Crypto API
+async function hmacSha256(message, secret) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
+  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Direct Binance Futures API calls from browser (bypasses server geo-block)
+async function binanceFetch(path, apiKey, apiSecret, extraParams = {}, method = 'GET') {
+  const params = { ...extraParams, timestamp: Date.now().toString() };
+  const qs = new URLSearchParams(params).toString();
+  const signature = await hmacSha256(qs, apiSecret);
+  const url = `https://fapi.binance.com${path}?${qs}&signature=${signature}`;
+  const res = await fetch(url, { method, headers: { 'X-MBX-APIKEY': apiKey } });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.msg || `Binance error ${res.status}`);
+  return data;
+}
+
 export default function LiveTrading() {
   const { isPro, loading: subLoading } = useSubscription();
   const queryClient = useQueryClient();
   const [user, setUser] = useState(null);
   const [activeKey, setActiveKey] = useState(null);
+  const [credentials, setCredentials] = useState(null); // { apiKey, apiSecret }
   const [balance, setBalance] = useState(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
   const [prices, setPrices] = useState({});
@@ -36,33 +60,28 @@ export default function LiveTrading() {
     base44.auth.me().then(setUser).catch(() => {});
   }, []);
 
-  // Fetch active API key
   const { data: apiKeys = [] } = useQuery({
     queryKey: ["userApiKeys", user?.email],
     queryFn: () => base44.entities.UserApiKey.filter({ created_by: user.email }, "-created_date", 10),
     enabled: !!user,
-    refetchInterval: 30000,
   });
 
-  // Fetch trades - MUST be before fetchOpenOrders
-  const { data: trades = [], isLoading, refetch: refetchTrades } = useQuery({
+  const { data: trades = [], refetch: refetchTrades } = useQuery({
     queryKey: ["liveTrades", user?.email],
     queryFn: () => base44.entities.LiveTrade.filter({ created_by: user.email }, "-created_date", 100),
     enabled: !!user,
     refetchInterval: 5000,
   });
 
-  // Real-time subscription to trades
   useEffect(() => {
     if (!user) return;
     const unsubscribe = base44.entities.LiveTrade.subscribe((event) => {
-      if (event.data.created_by === user.email) {
-        refetchTrades();
-      }
+      if (event.data?.created_by === user.email) refetchTrades();
     });
     return () => unsubscribe();
   }, [user, refetchTrades]);
 
+  // When active key changes, fetch credentials from backend once
   useEffect(() => {
     if (apiKeys.length > 0 && !activeKey) {
       const active = apiKeys.find(k => k.is_active) || apiKeys[0];
@@ -70,53 +89,47 @@ export default function LiveTrading() {
     }
   }, [apiKeys, activeKey]);
 
-  const [geoBlocked, setGeoBlocked] = useState(false);
+  useEffect(() => {
+    if (!activeKey) return;
+    setCredentials(null);
+    base44.functions.invoke("decryptApiSecret", { keyId: activeKey.id })
+      .then(res => {
+        setCredentials({ apiKey: activeKey.api_key, apiSecret: res.data.secret });
+      })
+      .catch(e => setBotLog(`❌ Nu s-au putut încărca credențialele: ${e.message}`));
+  }, [activeKey]);
 
-  // Fetch balance via backend
+  // Fetch balance directly from browser (no server geo-block)
   const fetchBalance = useCallback(async () => {
-    if (!activeKey || !user) return;
+    if (!credentials) return;
     setLoadingBalance(true);
     try {
-      const res = await base44.functions.invoke("binanceApi", { action: "getBalance", keyId: activeKey.id });
-      if (!res.data.success) {
-        const err = res.data.error || "";
-        if (err.includes("restricted location") || err.includes("Eligibility")) {
-          setGeoBlocked(true);
-        }
-        throw new Error(err || "Failed to fetch balance");
-      }
-      setGeoBlocked(false);
-      const assets = res.data.data || [];
+      const assets = await binanceFetch('/fapi/v2/balance', credentials.apiKey, credentials.apiSecret);
       const usdt = assets.find(a => a.asset === "USDT") || {};
       setBalance({
         availableBalance: parseFloat(usdt.availableBalance || 0),
         totalWallet: parseFloat(usdt.balance || 0),
       });
-      setBotLog(`✅ Balanță actualizată`);
     } catch (e) {
-      if (!e.message.includes("restricted location") && !e.message.includes("Eligibility")) {
-        setBotLog(`❌ Eroare: ${e.message}`);
-      }
+      setBotLog(`❌ Balanță: ${e.message}`);
     }
     setLoadingBalance(false);
-  }, [activeKey, user]);
+  }, [credentials]);
 
-  // Fetch positions via backend
+  // Fetch positions directly from browser
   const fetchPositions = useCallback(async () => {
-    if (!activeKey || !user || geoBlocked) return;
+    if (!credentials) return;
     try {
-      const res = await base44.functions.invoke("binanceApi", { action: "getPositionRisk", keyId: activeKey.id });
-      if (!res.data.success) throw new Error(res.data.error);
-      const activePositions = (res.data.data || []).filter(p => parseFloat(p.positionAmt) !== 0);
-      setPositions(activePositions);
+      const data = await binanceFetch('/fapi/v2/positionRisk', credentials.apiKey, credentials.apiSecret);
+      setPositions((data || []).filter(p => parseFloat(p.positionAmt) !== 0));
     } catch (e) {
-      console.error("Error fetching positions:", e);
+      console.error("Positions error:", e.message);
     }
-  }, [activeKey, user, geoBlocked]);
+  }, [credentials]);
 
-  // Poll balance + positions every 15s (stop if geo-blocked)
+  // Poll every 15s when credentials are ready
   useEffect(() => {
-    if (!activeKey || geoBlocked) return;
+    if (!credentials) return;
     fetchBalance();
     fetchPositions();
     const interval = setInterval(() => {
@@ -124,7 +137,7 @@ export default function LiveTrading() {
       fetchPositions();
     }, 15000);
     return () => clearInterval(interval);
-  }, [activeKey, geoBlocked, fetchBalance, fetchPositions]);
+  }, [credentials, fetchBalance, fetchPositions]);
 
   // Load market prices
   const loadPrices = useCallback(async () => {
@@ -144,32 +157,20 @@ export default function LiveTrading() {
     return () => clearInterval(interval);
   }, [loadPrices]);
 
-  // Place order mutation via secure backend
+  // Place order directly from browser
   const placeOrderMutation = useMutation({
     mutationFn: async () => {
-      if (!activeKey || !user) throw new Error("No API key");
-      if (!balance || balance.availableBalance <= 0) {
-        throw new Error("Balanță insuficientă. Eliberează balanța înainte de a plasa noi ordine.");
-      }
-      
+      if (!credentials) throw new Error("Credențialele nu sunt disponibile");
       setPlacingOrder(true);
       try {
-        const res = await base44.functions.invoke("binanceApi", {
-          action: "placeOrder",
-          keyId: activeKey.id,
-          params: {
-            symbol: orderParams.symbol,
-            side: orderParams.side,
-            type: "LIMIT",
-            timeInForce: "GTC",
-            quantity: orderParams.quantity.toString(),
-            price: orderParams.price.toString(),
-          }
-        });
-        
-        if (!res.data.success) throw new Error(res.data.error || "Failed to place order");
-        
-        const orderRes = res.data.data;
+        const orderRes = await binanceFetch('/fapi/v1/order', credentials.apiKey, credentials.apiSecret, {
+          symbol: orderParams.symbol,
+          side: orderParams.side,
+          type: "LIMIT",
+          timeInForce: "GTC",
+          quantity: orderParams.quantity.toString(),
+          price: orderParams.price.toString(),
+        }, 'POST');
 
         await base44.entities.LiveTrade.create({
           symbol: orderParams.symbol,
@@ -177,11 +178,11 @@ export default function LiveTrading() {
           status: "open",
           entry_price: orderParams.price,
           quantity: orderParams.quantity,
-          binance_order_id: orderRes?.orderId,
+          binance_order_id: orderRes?.orderId?.toString(),
           notes: `Placed at ${new Date().toLocaleString("ro-RO")}`,
         });
 
-        setBotLog(`✅ Ordine: ${orderParams.symbol} ${orderParams.side}`);
+        setBotLog(`✅ Ordine plasată: ${orderParams.symbol} ${orderParams.side}`);
         setOrderDialog(false);
         queryClient.invalidateQueries({ queryKey: ["liveTrades"] });
       } catch (e) {
@@ -225,10 +226,9 @@ export default function LiveTrading() {
         </div>
       )}
 
-      {geoBlocked && (
-        <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-4 text-sm text-amber-400">
-          <strong>⚠️ Binance blochează accesul din această regiune (eroare 451)</strong>
-          <p className="mt-1 text-amber-300/80">Serverul aplicației este blocat de Binance din motive geografice. Binance restricționează accesul API din anumite centre de date cloud. Contactează suportul Binance sau folosește un cont cu acces API activ dintr-o regiune permisă.</p>
+      {activeKey && !credentials && (
+        <div className="bg-secondary/50 border border-border rounded-xl p-4 text-sm text-muted-foreground flex items-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" /> Se încarcă credențialele API...
         </div>
       )}
 
@@ -244,7 +244,7 @@ export default function LiveTrading() {
                 size="icon" 
                 className="h-7 w-7" 
                 onClick={fetchBalance}
-                disabled={loadingBalance || !activeKey}
+                disabled={loadingBalance || !credentials}
               >
                 <RefreshCw className={`w-3 h-3 ${loadingBalance ? "animate-spin" : ""}`} />
               </Button>
@@ -255,7 +255,7 @@ export default function LiveTrading() {
                 <p className="text-xs text-muted-foreground">disponibil · Total: ${balance.totalWallet?.toFixed(2)}</p>
               </div>
             ) : (
-              <p className="text-muted-foreground text-sm">{activeKey ? "Se încarcă..." : "—"}</p>
+              <p className="text-muted-foreground text-sm">{credentials ? "Se încarcă..." : "—"}</p>
             )}
           </div>
 
@@ -330,7 +330,7 @@ export default function LiveTrading() {
                 </div>
                 <Button 
                   onClick={() => placeOrderMutation.mutate()} 
-                  disabled={placingOrder || !activeKey || !balance || balance.availableBalance <= 0} 
+                  disabled={placingOrder || !credentials} 
                   className="w-full bg-pump-strong hover:bg-pump-strong/90"
                 >
                   {placingOrder ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Zap className="w-4 h-4 mr-2" />}
