@@ -16,9 +16,8 @@ export default function ApiSettings() {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
-  const [showPassphrase, setShowPassphrase] = useState(false);
   const [testing, setTesting] = useState(null);
-  const [form, setForm] = useState({ api_key: "69ff1a0d0ca919000198d4e4", api_secret: "2ca9de90-8719-4e94-ae96-732832e1a452", api_passphrase: "cacat12345", market_type: "futures", label: "Bot Main" });
+  const [form, setForm] = useState({ api_key: "", api_secret: "", market_type: "futures", label: "Binance Account" });
 
   const [user, setUser] = React.useState(null);
   React.useEffect(() => { base44.auth.me().then(setUser).catch(() => {}); }, []);
@@ -46,8 +45,7 @@ export default function ApiSettings() {
   const testConnection = async (keyRecord) => {
     setTesting(keyRecord.id);
     try {
-      // Delegate to backend function (handles KuCoin signing)
-      const result = await base44.functions.invoke("testApiKey", { keyId: keyRecord.id });
+      const result = await base44.functions.invoke("testBinanceKey", { keyId: keyRecord.id });
       
       await base44.entities.UserApiKey.update(keyRecord.id, {
         test_status: "ok",
@@ -66,14 +64,7 @@ export default function ApiSettings() {
     setTesting(null);
   };
 
-  const signRequest = async (queryString, secret) => {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(queryString);
-    const keyData = encoder.encode(secret);
-    const key = await crypto.subtle.importKey("raw", keyData, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-    const signature = await crypto.subtle.sign("HMAC", key, data);
-    return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, "0")).join("");
-  };
+
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -94,7 +85,7 @@ export default function ApiSettings() {
           <Key className="w-6 h-6 text-primary" />
           <div>
             <h1 className="text-2xl font-bold">🔑 API Keys</h1>
-            <p className="text-sm text-muted-foreground">Gestionează cheile API KuCoin</p>
+            <p className="text-sm text-muted-foreground">Gestionează cheile API Binance</p>
           </div>
         </div>
         <Button onClick={() => setShowForm(!showForm)} className="bg-primary">
@@ -108,8 +99,8 @@ export default function ApiSettings() {
        <div className="text-sm">
          <p className="font-semibold text-yellow-400">Atenție la Securitate</p>
          <p className="text-muted-foreground mt-1">
-           Folosește chei API KuCoin cu permisiuni <strong>doar pentru Futures Trading</strong>. 
-           Dezactivează opțiunile de Withdrawal. Cheile sunt stocate criptat în baza de date a aplicației.
+           Folosește chei API Binance cu permisiuni <strong>doar pentru Trading</strong>. 
+           Dezactivează opțiunile de Withdrawal și Transfer. Cheile sunt stocate criptat în baza de date a aplicației.
          </p>
        </div>
       </div>
@@ -136,7 +127,7 @@ export default function ApiSettings() {
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">API Key *</Label>
-              <Input placeholder="KuCoin API Key" value={form.api_key}
+              <Input placeholder="Binance API Key" value={form.api_key}
                 onChange={e => setF("api_key", e.target.value)} className="bg-secondary mt-1 font-mono text-xs" required />
             </div>
             <div>
@@ -144,7 +135,7 @@ export default function ApiSettings() {
               <div className="relative mt-1">
                 <Input
                   type={showSecret ? "text" : "password"}
-                  placeholder="KuCoin API Secret"
+                  placeholder="Binance API Secret"
                   value={form.api_secret}
                   onChange={e => setF("api_secret", e.target.value)}
                   className="bg-secondary font-mono text-xs pr-10" required
@@ -152,22 +143,6 @@ export default function ApiSettings() {
                 <button type="button" onClick={() => setShowSecret(!showSecret)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                   {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">API Passphrase (7-32 caractere) *</Label>
-              <div className="relative mt-1">
-                <Input
-                  type={showPassphrase ? "text" : "password"}
-                  placeholder="cacat12345"
-                  value={form.api_passphrase}
-                  onChange={e => setF("api_passphrase", e.target.value)}
-                  className="bg-secondary font-mono text-xs pr-10" required
-                />
-                <button type="button" onClick={() => setShowPassphrase(!showPassphrase)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                  {showPassphrase ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>

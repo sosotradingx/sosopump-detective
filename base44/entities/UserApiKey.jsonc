@@ -4,15 +4,11 @@
   "properties": {
     "api_key": {
       "type": "string",
-      "description": "KuCoin API Key"
+      "description": "Binance API Key"
     },
     "api_secret": {
       "type": "string",
-      "description": "KuCoin API Secret (stocat criptat)"
-    },
-    "api_passphrase": {
-      "type": "string",
-      "description": "KuCoin Trading Passphrase (6 cifre, stocat criptat)"
+      "description": "Binance API Secret (stocat criptat)"
     },
     "market_type": {
       "type": "string",
@@ -50,8 +46,7 @@
   },
   "required": [
     "api_key",
-    "api_secret",
-    "api_passphrase"
+    "api_secret"
   ],
   "rls": {
     "create": {
