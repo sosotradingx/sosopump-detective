@@ -1,12 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.25';
 
-async function hmacSha256(message, secret) {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
-  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
@@ -26,23 +19,45 @@ Deno.serve(async (req) => {
       throw new Error('Missing API credentials');
     }
 
-    // Build request
-    const timestamp = Date.now();
+    // Build request URL & body
+    const timestamp = Date.now().toString();
     let url = `https://api-futures.kucoin.com${path}`;
-    let body = null;
-    let queryString = '';
+    let bodyStr = '';
 
-    if (method === 'GET' && Object.keys(params).length > 0) {
-      queryString = new URLSearchParams(params).toString();
-      url += '?' + queryString;
-    } else if (method !== 'GET') {
-      body = JSON.stringify(params);
+    if (method === 'GET') {
+      if (Object.keys(params).length > 0) {
+        const qs = new URLSearchParams(params).toString();
+        url += '?' + qs;
+      }
+    } else {
+      bodyStr = JSON.stringify(params);
     }
 
-    // Sign request
-    const message = `${timestamp}${method}${path}${queryString || (body || '')}`;
-    const signature = await hmacSha256(message, apiSecret);
-    const passphraseHash = await hmacSha256(apiPassphrase, apiSecret);
+    // KuCoin signing: message = timestamp + method + path + body
+    const signMessage = timestamp + method + path + bodyStr;
+    
+    // HMAC-SHA256 signature
+    const encoder = new TextEncoder();
+    const secretKey = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(apiSecret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const sigBuffer = await crypto.subtle.sign('HMAC', secretKey, encoder.encode(signMessage));
+    const signature = btoa(String.fromCharCode(...new Uint8Array(sigBuffer)));
+
+    // Hash passphrase
+    const passphraseKey = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(apiSecret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const passBuffer = await crypto.subtle.sign('HMAC', passphraseKey, encoder.encode(apiPassphrase));
+    const passphraseHash = btoa(String.fromCharCode(...new Uint8Array(passBuffer)));
 
     // Make KuCoin request
     const kucoinRes = await fetch(url, {
@@ -50,16 +65,16 @@ Deno.serve(async (req) => {
       headers: {
         'KC-API-KEY': apiKey,
         'KC-API-SIGN': signature,
-        'KC-API-TIMESTAMP': timestamp.toString(),
+        'KC-API-TIMESTAMP': timestamp,
         'KC-API-PASSPHRASE': passphraseHash,
         'Content-Type': 'application/json'
       },
-      body
+      body: bodyStr || undefined
     });
 
     const data = await kucoinRes.json();
     if (!kucoinRes.ok) {
-      throw new Error(data.msg || `KuCoin error ${kucoinRes.status}`);
+      throw new Error(data.msg || `KuCoin error ${kucoinRes.status}: ${JSON.stringify(data)}`);
     }
 
     return Response.json({ data: data.data || data });
