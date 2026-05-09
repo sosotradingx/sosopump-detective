@@ -23,12 +23,9 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/functions ./functions
 COPY --from=builder /app/public ./public
 
-EXPOSE 3000
+EXPOSE 4173
 
 ENV NODE_ENV=production
 
-EXPOSE 3000
-
-ENV NODE_ENV=production
-
+ENTRYPOINT ["/usr/sbin/dumb-init", "--"]
 CMD ["npm", "run", "preview", "--", "--host", "0.0.0.0"]
