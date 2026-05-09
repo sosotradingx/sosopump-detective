@@ -37,20 +37,33 @@ async function binanceFetch(path, apiKey, apiSecret, extraParams = {}, method = 
   return data;
 }
 
+// Detect if account uses Hedge Mode
+async function isHedgeMode(creds) {
+  try {
+    const res = await binanceFetch('/fapi/v1/positionSide/dual', creds.apiKey, creds.apiSecret);
+    return res.dualSidePosition === true;
+  } catch { return false; }
+}
+
 // Place a MARKET order and optionally SL + TP orders
-async function placeMarketWithSlTp(creds, symbol, side, quantity, stopLoss, takeProfit) {
+async function placeMarketWithSlTp(creds, symbol, side, quantity, stopLoss, takeProfit, hedgeMode) {
+  const positionSide = side === "BUY" ? "LONG" : "SHORT";
+  const closeSide = side === "BUY" ? "SELL" : "BUY";
+  const closePositionSide = side === "BUY" ? "LONG" : "SHORT";
+
+  const baseParams = hedgeMode ? { positionSide } : {};
+  const closeParams = hedgeMode ? { positionSide: closePositionSide } : { closePosition: "true" };
+
   // Main market order
   const order = await binanceFetch('/fapi/v1/order', creds.apiKey, creds.apiSecret, {
-    symbol, side, type: "MARKET", quantity: quantity.toString(),
+    symbol, side, type: "MARKET", quantity: quantity.toString(), ...baseParams,
   }, 'POST');
-
-  const closeSide = side === "BUY" ? "SELL" : "BUY";
 
   // Stop Loss order
   if (stopLoss > 0) {
     await binanceFetch('/fapi/v1/order', creds.apiKey, creds.apiSecret, {
       symbol, side: closeSide, type: "STOP_MARKET",
-      stopPrice: stopLoss.toString(), closePosition: "true",
+      stopPrice: stopLoss.toString(), ...closeParams,
     }, 'POST').catch(() => {});
   }
 
@@ -58,7 +71,7 @@ async function placeMarketWithSlTp(creds, symbol, side, quantity, stopLoss, take
   if (takeProfit > 0) {
     await binanceFetch('/fapi/v1/order', creds.apiKey, creds.apiSecret, {
       symbol, side: closeSide, type: "TAKE_PROFIT_MARKET",
-      stopPrice: takeProfit.toString(), closePosition: "true",
+      stopPrice: takeProfit.toString(), ...closeParams,
     }, 'POST').catch(() => {});
   }
 
@@ -66,11 +79,13 @@ async function placeMarketWithSlTp(creds, symbol, side, quantity, stopLoss, take
 }
 
 // Close a position with a MARKET order
-async function closePosition(creds, symbol, positionAmt) {
+async function closePosition(creds, symbol, positionAmt, hedgeMode) {
   const qty = Math.abs(parseFloat(positionAmt));
   const side = parseFloat(positionAmt) > 0 ? "SELL" : "BUY";
+  const positionSide = parseFloat(positionAmt) > 0 ? "LONG" : "SHORT";
+  const extra = hedgeMode ? { positionSide } : {};
   return binanceFetch('/fapi/v1/order', creds.apiKey, creds.apiSecret, {
-    symbol, side, type: "MARKET", quantity: qty.toString(),
+    symbol, side, type: "MARKET", quantity: qty.toString(), ...extra,
   }, 'POST');
 }
 
@@ -130,14 +145,17 @@ export default function LiveTrading() {
   const [showAutoSettings, setShowAutoSettings] = useState(false);
   const [botLog, setBotLog] = useState([]);
   const [botRunning, setBotRunning] = useState(false);
+  const [hedgeMode, setHedgeMode] = useState(false);
   const botRunningRef = useRef(false);
   const autoConfigRef = useRef(autoConfig);
   const autoIntervalRef = useRef(null);
   const cooldownMap = useRef({});
   const credentialsRef = useRef(null);
+  const hedgeModeRef = useRef(false);
 
   useEffect(() => { autoConfigRef.current = autoConfig; }, [autoConfig]);
   useEffect(() => { credentialsRef.current = credentials; }, [credentials]);
+  useEffect(() => { hedgeModeRef.current = hedgeMode; }, [hedgeMode]);
   useEffect(() => { saveAutoConfig(autoConfig); }, [autoConfig]);
   useEffect(() => { try { localStorage.setItem("soso_live_auto_enabled", String(autoEnabled)); } catch {} }, [autoEnabled]);
 
@@ -160,7 +178,15 @@ export default function LiveTrading() {
     if (!activeKey) return;
     setCredentials(null);
     base44.functions.invoke("decryptApiSecret", { keyId: activeKey.id })
-      .then(res => setCredentials({ apiKey: activeKey.api_key, apiSecret: res.data.secret }))
+      .then(async res => {
+        const creds = { apiKey: activeKey.api_key, apiSecret: res.data.secret };
+        setCredentials(creds);
+        // Detect hedge mode
+        const hedge = await isHedgeMode(creds);
+        setHedgeMode(hedge);
+        hedgeModeRef.current = hedge;
+        addLog(`ℹ️ Mod poziție: ${hedge ? "Hedge (Dual)" : "One-Way"}`);
+      })
       .catch(e => addLog(`❌ Credențiale: ${e.message}`));
   }, [activeKey]);
 
@@ -241,7 +267,7 @@ export default function LiveTrading() {
           if (analysis.totalScore < 20) {
             try {
               await cancelAllOrders(creds, pos.symbol);
-              await closePosition(creds, pos.symbol, pos.positionAmt);
+              await closePosition(creds, pos.symbol, pos.positionAmt, hedgeModeRef.current);
               cooldownMap.current[pos.symbol] = Date.now() + (cfg.cooldownMinutes || 60) * 60000;
               addLog(`❌ EXIT ${pos.symbol} | Score scăzut (${analysis.totalScore}) | P&L: ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%`);
             } catch (e) { addLog(`⚠️ Eroare exit ${pos.symbol}: ${e.message}`); }
@@ -318,7 +344,7 @@ export default function LiveTrading() {
             : 0;
 
           try {
-            await placeMarketWithSlTp(creds, pair.symbol, "BUY", quantity, stopLoss, takeProfit);
+            await placeMarketWithSlTp(creds, pair.symbol, "BUY", quantity, stopLoss, takeProfit, hedgeModeRef.current);
             openSymbols.add(pair.symbol);
             opened++;
             addLog(`✅ CUMPĂRAT ${pair.symbol} | Score: ${analysis.totalScore} | Qty: ${quantity} | SL: ${stopLoss} | TP: ${takeProfit}`);
@@ -390,7 +416,7 @@ export default function LiveTrading() {
     if (!credentials) return;
     try {
       await cancelAllOrders(credentials, pos.symbol);
-      await closePosition(credentials, pos.symbol, pos.positionAmt);
+      await closePosition(credentials, pos.symbol, pos.positionAmt, hedgeMode);
       addLog(`🔴 Închis manual: ${pos.symbol}`);
       setTimeout(fetchPositions, 1000);
     } catch (e) { addLog(`⚠️ Eroare închidere ${pos.symbol}: ${e.message}`); }
