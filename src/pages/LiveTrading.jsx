@@ -198,12 +198,10 @@ export default function LiveTrading() {
     if (!activeKey?.id) return;
     setLoadingBalance(true);
     try {
-      const accts = await kucoinRequest(activeKey.id, 'GET', '/api/v1/accounts', {});
-      const accounts = Array.isArray(accts) ? accts : accts?.accounts || [];
-      const mainAcct = accounts.find(a => a.type === 'MARGIN') || accounts[0] || {};
+      const data = await kucoinRequest(activeKey.id, 'GET', '/api/v1/account/overview', {});
       setBalance({
-        availableBalance: parseFloat(mainAcct.available || 0),
-        totalWallet: parseFloat(mainAcct.balance || 0),
+        availableBalance: parseFloat(data.availableBalance || 0),
+        totalWallet: parseFloat(data.totalFundsValue || 0),
         asset: 'USDT'
       });
     } catch (e) { addLog(`❌ Balanță: ${e.message}`); }
@@ -213,8 +211,8 @@ export default function LiveTrading() {
   const fetchPositions = useCallback(async () => {
     if (!activeKey?.id) return;
     try {
-      const data = await kucoinRequest(activeKey.id, 'GET', '/api/v1/positions', {});
-      const positions = Array.isArray(data) ? data : data?.positions || [];
+      const data = await kucoinRequest(activeKey.id, 'GET', '/api/v1/position', {});
+      const positions = Array.isArray(data) ? data : [];
       setPositions(positions.filter(p => parseFloat(p.currentQty || 0) !== 0));
     } catch (e) { console.error("Positions error:", e.message); }
   }, [activeKey]);
