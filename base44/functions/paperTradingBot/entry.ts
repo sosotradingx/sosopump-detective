@@ -1,23 +1,57 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.25';
 
-async function fetchPricesViaLLM(base44, symbols) {
+// KuCoin - not geo-blocked, returns real prices
+async function fetchPricesKuCoin(symbols) {
+  const priceMap = {};
   try {
-    const result = await base44.asServiceRole.integrations.Core.InvokeLLM({
-      prompt: `Get the CURRENT real-time market prices in USD for these cryptocurrency trading pairs: ${symbols.join(", ")}.
-These are Binance perpetual futures symbols. Return ONLY a JSON object with the symbol as key and current price as a number.
-For unknown/delisted symbols return null. Example: {"BTCUSDT": 65000.50, "ETHUSDT": 3200.00, "UNKNOWNUSDT": null}`,
-      add_context_from_internet: true,
-      response_json_schema: {
-        type: "object",
-        properties: {},
-        additionalProperties: true
-      }
+    const r = await fetch("https://api.kucoin.com/api/v1/market/allTickers", {
+      headers: { "Accept": "application/json" }
     });
-    return result || {};
+    if (!r.ok) {
+      console.log(`[BOT] KuCoin failed: ${r.status}`);
+      return priceMap;
+    }
+    const data = await r.json();
+    const list = data?.data?.ticker || [];
+    for (const item of list) {
+      // KuCoin uses BTC-USDT format, Binance uses BTCUSDT
+      const sym = item.symbol.replace("-", "");
+      if (symbols.includes(sym) && item.last) {
+        priceMap[sym] = parseFloat(item.last);
+      }
+    }
+    console.log(`[BOT] KuCoin prices: ${Object.keys(priceMap).length}/${symbols.length}`);
   } catch (e) {
-    console.log(`[BOT] LLM error: ${e.message}`);
-    return {};
+    console.log(`[BOT] KuCoin error: ${e.message}`);
   }
+  return priceMap;
+}
+
+// OKX as secondary fallback
+async function fetchPricesOKX(symbols) {
+  const priceMap = {};
+  try {
+    const r = await fetch("https://www.okx.com/api/v5/market/tickers?instType=SPOT", {
+      headers: { "Accept": "application/json" }
+    });
+    if (!r.ok) {
+      console.log(`[BOT] OKX failed: ${r.status}`);
+      return priceMap;
+    }
+    const data = await r.json();
+    const list = data?.data || [];
+    for (const item of list) {
+      // OKX uses BTC-USDT format
+      const sym = item.instId.replace("-", "");
+      if (symbols.includes(sym) && item.last) {
+        priceMap[sym] = parseFloat(item.last);
+      }
+    }
+    console.log(`[BOT] OKX prices: ${Object.keys(priceMap).length}`);
+  } catch (e) {
+    console.log(`[BOT] OKX error: ${e.message}`);
+  }
+  return priceMap;
 }
 
 Deno.serve(async (req) => {
@@ -34,10 +68,23 @@ Deno.serve(async (req) => {
     }
 
     const symbols = [...new Set(openTrades.map(t => t.symbol))];
-    console.log(`[BOT] Fetching prices for: ${symbols.join(", ")}`);
+    console.log(`[BOT] Symbols: ${symbols.join(", ")}`);
 
-    const priceMap = await fetchPricesViaLLM(base44, symbols);
-    console.log(`[BOT] Got prices: ${JSON.stringify(priceMap)}`);
+    // Primary: KuCoin
+    let priceMap = await fetchPricesKuCoin(symbols);
+
+    // Fallback: OKX for missing symbols
+    const missing = symbols.filter(s => !priceMap[s]);
+    if (missing.length > 0) {
+      console.log(`[BOT] Missing after KuCoin: ${missing.join(", ")}`);
+      const okxPrices = await fetchPricesOKX(missing);
+      priceMap = { ...priceMap, ...okxPrices };
+    }
+
+    const stillMissing = symbols.filter(s => !priceMap[s]);
+    if (stillMissing.length > 0) {
+      console.log(`[BOT] No price found for: ${stillMissing.join(", ")} - skipping`);
+    }
 
     const closed = [];
     const log = [];
@@ -45,16 +92,15 @@ Deno.serve(async (req) => {
     for (const trade of openTrades) {
       const cur = priceMap[trade.symbol];
       if (!cur || !trade.entry_price) {
-        console.log(`[BOT] No price for ${trade.symbol}`);
+        console.log(`[BOT] No price for ${trade.symbol}, skipping`);
         continue;
       }
 
       const pnlPct = ((cur - trade.entry_price) / trade.entry_price) * 100;
       let reason = null;
 
-      console.log(`[BOT] ${trade.symbol}: cur=${cur} SL=${trade.stop_loss} TP=${trade.take_profit}`);
+      console.log(`[BOT] ${trade.symbol}: cur=${cur} | SL=${trade.stop_loss} | TP=${trade.take_profit} | PnL=${pnlPct.toFixed(2)}%`);
 
-      // SL check FIRST (most critical)
       if (trade.stop_loss > 0 && cur <= trade.stop_loss) {
         reason = "stop_loss";
       } else if (trade.take_profit > 0 && cur >= trade.take_profit) {
