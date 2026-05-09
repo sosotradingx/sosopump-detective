@@ -107,12 +107,13 @@ export default function LiveTrading() {
       const assets = await binanceFetch('/fapi/v2/balance', credentials.apiKey, credentials.apiSecret);
       console.log('BALANCE RESPONSE:', JSON.stringify(assets));
       const list = Array.isArray(assets) ? assets : [];
-      const usdt = list.find(a => a.asset === "USDT") || {};
-      const usdc = list.find(a => a.asset === "USDC") || {};
-      console.log('USDT:', usdt, 'USDC:', usdc);
-      const availableBalance = parseFloat(usdt.availableBalance || 0) + parseFloat(usdc.availableBalance || 0);
-      const totalWallet = parseFloat(usdt.balance || 0) + parseFloat(usdc.balance || 0);
-      setBalance({ availableBalance, totalWallet });
+      // Find the asset with the highest availableBalance (main margin asset)
+      const mainAsset = list.reduce((best, a) => 
+        parseFloat(a.availableBalance || 0) > parseFloat(best.availableBalance || 0) ? a : best
+      , { availableBalance: "0", balance: "0", asset: "" });
+      const availableBalance = parseFloat(mainAsset.availableBalance || 0);
+      const totalWallet = parseFloat(mainAsset.balance || 0);
+      setBalance({ availableBalance, totalWallet, asset: mainAsset.asset });
     } catch (e) {
       setBotLog(`❌ Balanță: ${e.message}`);
     }
@@ -255,7 +256,7 @@ export default function LiveTrading() {
             {balance && balance.availableBalance ? (
               <div className="space-y-1">
                 <p className="text-2xl font-bold font-mono">${balance.availableBalance?.toFixed(2)}</p>
-                <p className="text-xs text-muted-foreground">disponibil · Total: ${balance.totalWallet?.toFixed(2)}</p>
+                <p className="text-xs text-muted-foreground">disponibil {balance.asset} · Total: {balance.totalWallet?.toFixed(2)}</p>
               </div>
             ) : (
               <p className="text-muted-foreground text-sm">{credentials ? "Se încarcă..." : "—"}</p>
