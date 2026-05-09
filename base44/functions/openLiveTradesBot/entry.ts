@@ -46,8 +46,8 @@ Deno.serve(async (req) => {
       const decryptRes = await base44.asServiceRole.functions.invoke('decryptApiSecret', {
         keyId: apiKey.id
       });
-      apiSecret = decryptRes.data.secret;
-      apiPassphrase = decryptRes.data.passphrase;
+      apiSecret = decryptRes.data?.secret;
+      apiPassphrase = decryptRes.data?.passphrase;
     } catch (e) {
       console.log('[OPEN-BOT] Failed to decrypt secret:', e.message);
       return Response.json({ error: 'Failed to decrypt API secret' }, { status: 500 });
