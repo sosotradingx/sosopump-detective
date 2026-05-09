@@ -1,14 +1,13 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { base44 } from "@/api/base44Client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchTopPairs } from "../components/scanner/binanceApi";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Loader2, Zap, Activity, RefreshCw, AlertTriangle, DollarSign } from "lucide-react";
+import { Loader2, Zap, RefreshCw, AlertTriangle } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
 import PlanGate from "@/components/PlanGate";
 
@@ -37,13 +36,11 @@ async function binanceFetch(path, apiKey, apiSecret, extraParams = {}, method = 
 
 export default function LiveTrading() {
   const { isPro, loading: subLoading } = useSubscription();
-  const queryClient = useQueryClient();
   const [user, setUser] = useState(null);
   const [activeKey, setActiveKey] = useState(null);
-  const [credentials, setCredentials] = useState(null); // { apiKey, apiSecret }
+  const [credentials, setCredentials] = useState(null);
   const [balance, setBalance] = useState(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
-  const [prices, setPrices] = useState({});
   const [orderDialog, setOrderDialog] = useState(false);
   const [placingOrder, setPlacingOrder] = useState(false);
   const [botLog, setBotLog] = useState("");
@@ -65,21 +62,6 @@ export default function LiveTrading() {
     queryFn: () => base44.entities.UserApiKey.filter({ created_by: user.email }, "-created_date", 10),
     enabled: !!user,
   });
-
-  const { data: trades = [], refetch: refetchTrades } = useQuery({
-    queryKey: ["liveTrades", user?.email],
-    queryFn: () => base44.entities.LiveTrade.filter({ created_by: user.email }, "-created_date", 100),
-    enabled: !!user,
-    refetchInterval: 5000,
-  });
-
-  useEffect(() => {
-    if (!user) return;
-    const unsubscribe = base44.entities.LiveTrade.subscribe((event) => {
-      if (event.data?.created_by === user.email) refetchTrades();
-    });
-    return () => unsubscribe();
-  }, [user, refetchTrades]);
 
   // When active key changes, fetch credentials from backend once
   useEffect(() => {
@@ -143,31 +125,13 @@ export default function LiveTrading() {
     return () => clearInterval(interval);
   }, [credentials, fetchBalance, fetchPositions]);
 
-  // Load market prices
-  const loadPrices = useCallback(async () => {
-    try {
-      const pairs = await fetchTopPairs("USDT", 200, 0);
-      const priceMap = {};
-      pairs.forEach(p => { priceMap[p.symbol] = p.price; });
-      setPrices(priceMap);
-    } catch (e) {
-      console.error("Error loading prices:", e);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadPrices();
-    const interval = setInterval(loadPrices, 15000);
-    return () => clearInterval(interval);
-  }, [loadPrices]);
-
   // Place order directly from browser
   const placeOrderMutation = useMutation({
     mutationFn: async () => {
       if (!credentials) throw new Error("Credențialele nu sunt disponibile");
       setPlacingOrder(true);
       try {
-        const orderRes = await binanceFetch('/fapi/v1/order', credentials.apiKey, credentials.apiSecret, {
+        await binanceFetch('/fapi/v1/order', credentials.apiKey, credentials.apiSecret, {
           symbol: orderParams.symbol,
           side: orderParams.side,
           type: "LIMIT",
@@ -176,19 +140,8 @@ export default function LiveTrading() {
           price: orderParams.price.toString(),
         }, 'POST');
 
-        await base44.entities.LiveTrade.create({
-          symbol: orderParams.symbol,
-          side: orderParams.side,
-          status: "open",
-          entry_price: orderParams.price,
-          quantity: orderParams.quantity,
-          binance_order_id: orderRes?.orderId?.toString(),
-          notes: `Placed at ${new Date().toLocaleString("ro-RO")}`,
-        });
-
         setBotLog(`✅ Ordine plasată: ${orderParams.symbol} ${orderParams.side}`);
         setOrderDialog(false);
-        queryClient.invalidateQueries({ queryKey: ["liveTrades"] });
       } catch (e) {
         setBotLog(`❌ Eroare: ${e.message}`);
         throw e;
@@ -197,10 +150,6 @@ export default function LiveTrading() {
       }
     },
   });
-
-  const openTrades = trades.filter(t => t.status === "open");
-  const closedTrades = trades.filter(t => t.status === "closed");
-  const totalPnl = closedTrades.reduce((s, t) => s + (t.pnl_usd || 0), 0);
 
   if (!subLoading && !isPro) {
     return <PlanGate requiredPlan="pro" feature="Live Trading" />;
@@ -261,24 +210,6 @@ export default function LiveTrading() {
             ) : (
               <p className="text-muted-foreground text-sm">{credentials ? "Se încarcă..." : "—"}</p>
             )}
-          </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-2">
-            <div className="bg-card border border-border rounded-lg p-3 text-center">
-              <p className="text-xs text-muted-foreground">Deschise</p>
-              <p className="text-xl font-bold text-pump-active">{openTrades.length}</p>
-            </div>
-            <div className="bg-card border border-border rounded-lg p-3 text-center">
-              <p className="text-xs text-muted-foreground">Închise</p>
-              <p className="text-xl font-bold">{closedTrades.length}</p>
-            </div>
-            <div className="bg-card border border-border rounded-lg p-3 text-center">
-              <p className="text-xs text-muted-foreground">P&L $</p>
-              <p className={`text-xl font-bold ${totalPnl >= 0 ? "text-chart-green" : "text-chart-red"}`}>
-                {totalPnl >= 0 ? "+" : ""}{totalPnl.toFixed(2)}
-              </p>
-            </div>
           </div>
 
           {/* Place Order */}
@@ -392,91 +323,7 @@ export default function LiveTrading() {
             </div>
           )}
 
-          {/* Open Trades */}
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
-            <div className="p-4 border-b border-border flex items-center gap-2">
-              <Activity className="w-4 h-4 text-pump-active" />
-              <h3 className="text-sm font-semibold">Tranzacții Deschise ({openTrades.length})</h3>
-            </div>
-            {openTrades.length === 0 ? (
-              <p className="p-6 text-center text-sm text-muted-foreground">Nicio tranzacție deschisă</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-muted-foreground border-b border-border">
-                      <th className="text-left p-3">Pereche</th>
-                      <th className="text-center p-3">Side</th>
-                      <th className="text-right p-3">Intrare $</th>
-                      <th className="text-right p-3">Qty</th>
-                      <th className="text-right p-3">Curent</th>
-                      <th className="text-right p-3">P&L</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {openTrades.map(t => {
-                      const curPrice = prices[t.symbol] || t.entry_price;
-                      const pnl = ((curPrice - t.entry_price) / t.entry_price) * 100;
-                      return (
-                        <tr key={t.id} className="border-b border-border/40 hover:bg-accent/20">
-                          <td className="p-3 font-mono font-bold">{t.symbol}</td>
-                          <td className="p-3 text-center">
-                            <Badge variant="outline" className={t.side === "BUY" ? "text-chart-green" : "text-chart-red"}>{t.side}</Badge>
-                          </td>
-                          <td className="p-3 text-right font-mono">${t.entry_price?.toFixed(4)}</td>
-                          <td className="p-3 text-right font-mono">{t.quantity}</td>
-                          <td className="p-3 text-right font-mono">${curPrice?.toFixed(4)}</td>
-                          <td className={`p-3 text-right font-mono font-bold ${pnl >= 0 ? "text-chart-green" : "text-chart-red"}`}>
-                            {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}%
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
 
-          {/* Closed Trades */}
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
-            <div className="p-4 border-b border-border flex items-center gap-2">
-              <DollarSign className="w-4 h-4 text-muted-foreground" />
-              <h3 className="text-sm font-semibold">Istoric Tranzacții ({closedTrades.length})</h3>
-            </div>
-            {closedTrades.length === 0 ? (
-              <p className="p-6 text-center text-sm text-muted-foreground">Niciun istoric</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-muted-foreground border-b border-border">
-                      <th className="text-left p-3">Pereche</th>
-                      <th className="text-right p-3">Intrare</th>
-                      <th className="text-right p-3">Ieșire</th>
-                      <th className="text-right p-3">P&L %</th>
-                      <th className="text-right p-3">P&L $</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {closedTrades.slice(0, 30).map(t => (
-                      <tr key={t.id} className="border-b border-border/40 hover:bg-accent/20">
-                        <td className="p-3 font-mono font-bold">{t.symbol}</td>
-                        <td className="p-3 text-right font-mono">${t.entry_price?.toFixed(4) || "—"}</td>
-                        <td className="p-3 text-right font-mono">${t.exit_price?.toFixed(4) || "—"}</td>
-                        <td className={`p-3 text-right font-mono font-bold ${(t.pnl_percent || 0) >= 0 ? "text-chart-green" : "text-chart-red"}`}>
-                          {(t.pnl_percent || 0) >= 0 ? "+" : ""}{(t.pnl_percent || 0).toFixed(2)}%
-                        </td>
-                        <td className={`p-3 text-right font-mono font-bold ${(t.pnl_usd || 0) >= 0 ? "text-chart-green" : "text-chart-red"}`}>
-                          {(t.pnl_usd || 0) >= 0 ? "+" : ""}${(t.pnl_usd || 0).toFixed(2)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>
