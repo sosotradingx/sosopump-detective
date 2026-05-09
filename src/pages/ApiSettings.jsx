@@ -14,11 +14,11 @@ import PlanGate from "@/components/PlanGate";
 export default function ApiSettings() {
   const { isPro, loading: subLoading } = useSubscription();
   const queryClient = useQueryClient();
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(true);
   const [showSecret, setShowSecret] = useState(false);
   const [showPassphrase, setShowPassphrase] = useState(false);
   const [testing, setTesting] = useState(null);
-  const [form, setForm] = useState({ api_key: "", api_secret: "", api_passphrase: "", market_type: "futures", label: "" });
+  const [form, setForm] = useState({ api_key: "69ff1a0d0ca919000198d4e4", api_secret: "2ca9de90-8719-4e94-ae96-732832e1a452", api_passphrase: "cacat12345", market_type: "futures", label: "Bot Main" });
 
   const [user, setUser] = React.useState(null);
   React.useEffect(() => { base44.auth.me().then(setUser).catch(() => {}); }, []);
