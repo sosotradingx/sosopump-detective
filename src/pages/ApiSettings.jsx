@@ -45,34 +45,19 @@ export default function ApiSettings() {
   const testConnection = async (keyRecord) => {
     setTesting(keyRecord.id);
     try {
-      // Get secret from backend (secure retrieval)
-      const decrypted = await base44.functions.invoke("decryptApiSecret", { keyId: keyRecord.id });
-      const secret = decrypted.data.secret;
-
-      // Test with KuCoin API
-      const response = await fetch('https://api-futures.kucoin.com/api/v1/accounts', {
-        headers: {
-          'KC-API-KEY': keyRecord.api_key,
-          'KC-API-SECRET': secret,
-          'KC-API-PASSPHRASE': secret,
-          'Accept': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`KuCoin API: ${response.statusText} (${response.status})`);
-      }
-
+      // Delegate to backend function (handles KuCoin signing)
+      const result = await base44.functions.invoke("testApiKey", { keyId: keyRecord.id });
+      
       await base44.entities.UserApiKey.update(keyRecord.id, {
         test_status: "ok",
-        test_message: "Conexiune reușită ✓",
+        test_message: result.data?.message || "Conexiune reușită ✓",
         last_tested_at: new Date().toISOString(),
       });
       queryClient.invalidateQueries({ queryKey: ["userApiKeys"] });
     } catch (e) {
       await base44.entities.UserApiKey.update(keyRecord.id, {
         test_status: "error",
-        test_message: e.message,
+        test_message: e.response?.data?.message || e.message,
         last_tested_at: new Date().toISOString(),
       });
       queryClient.invalidateQueries({ queryKey: ["userApiKeys"] });
