@@ -1,8 +1,10 @@
 Deno.serve(async (req) => {
   try {
-    const apiKey = "69ff08a813464d000159749e";
-    const apiSecret = "76683f3b-989b-4a29-a005-d29a077b8406";
-    const apiPassphrase = "198730";
+    const { apiKey, apiSecret, apiPassphrase } = await req.json();
+    
+    if (!apiKey || !apiSecret || !apiPassphrase) {
+      return Response.json({ error: 'Missing credentials' }, { status: 400 });
+    }
 
     // Helper: HMAC-SHA256 as BASE64
     async function hmacSha256Base64(message, secret) {
