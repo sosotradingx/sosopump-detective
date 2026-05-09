@@ -1,5 +1,4 @@
-# Build stage
-FROM node:18-alpine AS builder
+FROM node:18-alpine
 
 WORKDIR /app
 
@@ -9,18 +8,6 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-# Runtime stage
-FROM node:18-alpine
-
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm ci
-
-COPY --from=builder /app/dist ./dist
-
 EXPOSE 4173
-
-ENV NODE_ENV=production
 
 CMD ["npm", "run", "preview", "--", "--host", "0.0.0.0"]
