@@ -24,8 +24,8 @@ Deno.serve(async (req) => {
     }
     
     const decrypted = await base44.asServiceRole.functions.invoke('decryptApiSecret', { keyId });
-    const apiSecret = decrypted.data?.secret || decrypted.secret;
-    const apiPassphrase = decrypted.data?.passphrase || decrypted.passphrase;
+    const apiSecret = decrypted.data.secret;
+    const apiPassphrase = decrypted.data.passphrase;
     
     if (!apiPassphrase) {
       throw new Error('Trading Passphrase is missing - update your API key with the 6-digit passphrase');
