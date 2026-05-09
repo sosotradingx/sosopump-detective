@@ -1,11 +1,19 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.25';
 
-async function hmacSha256(message, secret) {
+async function hmacSha256Hex(message, secret) {
   const encoder = new TextEncoder();
   const data = encoder.encode(message);
   const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const signature = await crypto.subtle.sign('HMAC', key, data);
   return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function hmacSha256Base64(message, secret) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(message);
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const signature = await crypto.subtle.sign('HMAC', key, data);
+  return btoa(String.fromCharCode(...new Uint8Array(signature)));
 }
 
 Deno.serve(async (req) => {
@@ -35,8 +43,8 @@ Deno.serve(async (req) => {
     const timestamp = Date.now();
     const path = '/api/v1/accounts';
     const message = `${timestamp}GET${path}`;
-    const signature = await hmacSha256(message, apiSecret);
-    const passphraseHash = await hmacSha256(apiPassphrase, apiSecret);
+    const signature = await hmacSha256Base64(message, apiSecret);
+    const passphraseHash = await hmacSha256Base64(apiPassphrase, apiSecret);
     
     const kucoinRes = await fetch(`https://api-futures.kucoin.com${path}`, {
       method: 'GET',
