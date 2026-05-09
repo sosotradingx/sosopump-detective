@@ -28,4 +28,4 @@ EXPOSE 3000
 ENV NODE_ENV=production
 
 ENTRYPOINT ["/usr/sbin/dumb-init", "--"]
-CMD ["npm", "run", "preview", "--", "--host", "0.0.0.0"]
+CMD ["npm", "run", "preview"]
