@@ -85,7 +85,7 @@ export default function Layout({ children, currentPageName }) {
             variant="ghost"
             size="sm"
             className="w-full text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-            onClick={() => base44.auth.logout()}
+            onClick={() => base44.auth.logout(window.location.origin)}
           >
             <LogOut className="w-4 h-4 mr-2" /> Log Out
           </Button>
@@ -131,7 +131,7 @@ export default function Layout({ children, currentPageName }) {
               );
             })}
             <button
-              onClick={() => base44.auth.logout()}
+              onClick={() => base44.auth.logout(window.location.origin)}
               className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm text-muted-foreground hover:text-destructive w-full"
             >
               <LogOut className="w-4 h-4" /> Log Out
