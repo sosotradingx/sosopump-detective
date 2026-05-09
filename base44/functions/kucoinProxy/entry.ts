@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
     const sigBuffer = await crypto.subtle.sign('HMAC', secretKey, encoder.encode(signMessage));
     const signature = btoa(String.fromCharCode(...new Uint8Array(sigBuffer)));
 
-    // Hash passphrase
+    // Hash passphrase - HMAC-SHA256(passphrase, apiSecret)
     const passphraseKey = await crypto.subtle.importKey(
       'raw',
       encoder.encode(apiSecret),
@@ -60,6 +60,9 @@ Deno.serve(async (req) => {
     );
     const passBuffer = await crypto.subtle.sign('HMAC', passphraseKey, encoder.encode(apiPassphrase));
     const passphraseHash = btoa(String.fromCharCode(...new Uint8Array(passBuffer)));
+    
+    // Debug: log passphrase for verification
+    console.log('[DEBUG] Passphrase hash for:', { passphraseLength: apiPassphrase.length, hashPreview: passphraseHash.substring(0, 20) + '...' });
 
     // Make KuCoin request
     const kucoinRes = await fetch(url, {
