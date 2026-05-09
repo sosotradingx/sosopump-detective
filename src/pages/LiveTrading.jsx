@@ -41,28 +41,15 @@ async function hmacSha256(message, secret) {
   return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function kucoinRequest(apiKey, apiSecret, method, path, params = {}) {
-  const timestamp = Date.now();
-  const body = method === 'GET' ? null : JSON.stringify(params);
-  const message = `${timestamp}${method}${path}${body || ''}`;
-  const sig = await hmacSha256(message, apiSecret);
-  
-  const url = `https://api-futures.kucoin.com${path}`;
-  const res = await fetch(url, {
+async function kucoinRequest(keyId, method, path, params = {}) {
+  const res = await base44.functions.invoke('kucoinProxy', {
     method,
-    headers: {
-      'KC-API-KEY': apiKey,
-      'KC-API-SECRET': apiSecret,
-      'KC-API-PASSPHRASE': apiSecret,
-      'KC-API-TIMESTAMP': timestamp.toString(),
-      'KC-API-SIGN': sig,
-      'Content-Type': 'application/json'
-    },
-    body
+    path,
+    params,
+    keyId
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.msg || `KuCoin error ${res.status}`);
-  return data.data || data;
+  if (!res.data) throw new Error(res.error || 'KuCoin request failed');
+  return res.data;
 }
 
 async function getDecryptedCreds(keyId) {
@@ -70,12 +57,11 @@ async function getDecryptedCreds(keyId) {
   return { apiKey: res.data?.key, apiSecret: res.data?.secret, apiPassphrase: res.data?.passphrase };
 }
 
-async function placeMarketWithSlTp(creds, symbol, side, quantity, stopLoss, takeProfit) {
-  const { apiKey, apiSecret } = creds;
+async function placeMarketWithSlTp(keyId, symbol, side, quantity, stopLoss, takeProfit) {
   const closeSide = side === "BUY" ? "sell" : "buy";
 
   // 1. Main MARKET order via KuCoin
-  const mainOrder = await kucoinRequest(apiKey, apiSecret, 'POST', '/api/v1/orders', {
+  const mainOrder = await kucoinRequest(keyId, 'POST', '/api/v1/orders', {
     symbol, side: side.toLowerCase(), type: 'market', size: quantity.toString()
   });
 
@@ -84,7 +70,7 @@ async function placeMarketWithSlTp(creds, symbol, side, quantity, stopLoss, take
   // 2. Stop Loss (stop order on KuCoin)
   if (stopLoss > 0) {
     try {
-      results.slOrder = await kucoinRequest(apiKey, apiSecret, 'POST', '/api/v1/orders', {
+      results.slOrder = await kucoinRequest(keyId, 'POST', '/api/v1/orders', {
         symbol, side: closeSide, type: 'stop', stopPrice: stopLoss.toString(), size: quantity.toString()
       });
     } catch (e) { results.slError = e.message; }
@@ -93,7 +79,7 @@ async function placeMarketWithSlTp(creds, symbol, side, quantity, stopLoss, take
   // 3. Take Profit (limit order)
   if (takeProfit > 0) {
     try {
-      results.tpOrder = await kucoinRequest(apiKey, apiSecret, 'POST', '/api/v1/orders', {
+      results.tpOrder = await kucoinRequest(keyId, 'POST', '/api/v1/orders', {
         symbol, side: closeSide, type: 'limit', price: takeProfit.toString(), size: quantity.toString()
       });
     } catch (e) { results.tpError = e.message; }
@@ -102,18 +88,17 @@ async function placeMarketWithSlTp(creds, symbol, side, quantity, stopLoss, take
   return results;
 }
 
-async function closePosition(creds, symbol, positionAmt) {
-  const { apiKey, apiSecret } = creds;
+async function closePosition(keyId, symbol, positionAmt) {
   const qty = Math.abs(parseFloat(positionAmt));
   const side = parseFloat(positionAmt) > 0 ? "sell" : "buy";
-  return kucoinRequest(apiKey, apiSecret, 'POST', '/api/v1/orders', {
+  return kucoinRequest(keyId, 'POST', '/api/v1/orders', {
     symbol, side, type: 'market', size: qty.toString()
   });
 }
 
-async function cancelAllOrders(creds, symbol) {
+async function cancelAllOrders(keyId, symbol) {
   try {
-    await kucoinRequest(creds.apiKey, creds.apiSecret, 'DELETE', '/api/v1/orders', { symbol });
+    await kucoinRequest(keyId, 'DELETE', '/api/v1/orders', { symbol });
   } catch (e) { console.warn('cancelAllOrders:', e.message); }
 }
 
@@ -214,11 +199,10 @@ export default function LiveTrading() {
   const addLog = (msg) => setBotLog(prev => [`[${new Date().toLocaleTimeString("ro-RO")}] ${msg}`, ...prev.slice(0, 49)]);
 
   const fetchBalance = useCallback(async () => {
-    const creds = credentialsRef.current;
-    if (!creds?.apiKey) return;
+    if (!activeKey?.id) return;
     setLoadingBalance(true);
     try {
-      const accts = await kucoinRequest(creds.apiKey, creds.apiSecret, 'GET', '/api/v1/accounts', {});
+      const accts = await kucoinRequest(activeKey.id, 'GET', '/api/v1/accounts', {});
       const accounts = Array.isArray(accts) ? accts : accts?.accounts || [];
       const mainAcct = accounts.find(a => a.type === 'MARGIN') || accounts[0] || {};
       setBalance({
@@ -228,17 +212,16 @@ export default function LiveTrading() {
       });
     } catch (e) { addLog(`❌ Balanță: ${e.message}`); }
     setLoadingBalance(false);
-  }, []);
+  }, [activeKey]);
 
   const fetchPositions = useCallback(async () => {
-    const creds = credentialsRef.current;
-    if (!creds?.apiKey) return;
+    if (!activeKey?.id) return;
     try {
-      const data = await kucoinRequest(creds.apiKey, creds.apiSecret, 'GET', '/api/v1/positions', {});
+      const data = await kucoinRequest(activeKey.id, 'GET', '/api/v1/positions', {});
       const positions = Array.isArray(data) ? data : data?.positions || [];
       setPositions(positions.filter(p => parseFloat(p.currentQty || 0) !== 0));
     } catch (e) { console.error("Positions error:", e.message); }
-  }, []);
+  }, [activeKey]);
 
   useEffect(() => {
     if (!credentials) return;
@@ -251,19 +234,19 @@ export default function LiveTrading() {
   // --- Auto-bot logic ---
   const runAutoBot = useCallback(async () => {
     if (botRunningRef.current) return;
-    const creds = credentialsRef.current;
-    if (!creds?.apiKey) { addLog("⚠️ Bot: credențiale lipsă"); return; }
+    if (!activeKey?.id) { addLog("⚠️ Bot: credențiale lipsă"); return; }
 
     botRunningRef.current = true;
     setBotRunning(true);
 
     const cfg = autoConfigRef.current;
     const isPerpetual = cfg.marketSource !== "spot";
+    const keyId = activeKey.id;
 
     // Fetch live positions directly
     let livePositions = [];
     try {
-      const posData = await kucoinRequest(creds.apiKey, creds.apiSecret, 'GET', '/api/v1/positions', {});
+      const posData = await kucoinRequest(keyId, 'GET', '/api/v1/positions', {});
       const positions = Array.isArray(posData) ? posData : posData?.positions || [];
       livePositions = positions.filter(p => parseFloat(p.currentQty || 0) !== 0);
       setPositions(livePositions);
@@ -287,8 +270,8 @@ export default function LiveTrading() {
           const analysis = analyzePump(kl);
           if (analysis.totalScore < 20) {
             try {
-              await cancelAllOrders(creds, pos.symbol);
-              await closePosition(creds, pos.symbol, pos.positionAmt, hedgeModeRef.current);
+              await cancelAllOrders(keyId, pos.symbol);
+              await closePosition(keyId, pos.symbol, pos.positionAmt);
               cooldownMap.current[pos.symbol] = Date.now() + (cfg.cooldownMinutes || 60) * 60000;
               addLog(`❌ EXIT ${pos.symbol} | Score scăzut (${analysis.totalScore}) | P&L: ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%`);
             } catch (e) { addLog(`⚠️ Eroare exit ${pos.symbol}: ${e.message}`); }
@@ -299,7 +282,7 @@ export default function LiveTrading() {
 
     // Refresh positions after exits
     try {
-      const posData = await kucoinRequest(creds.apiKey, creds.apiSecret, 'GET', '/api/v1/positions', {});
+      const posData = await kucoinRequest(keyId, 'GET', '/api/v1/positions', {});
       const positions = Array.isArray(posData) ? posData : posData?.positions || [];
       livePositions = positions.filter(p => parseFloat(p.currentQty || 0) !== 0);
       setPositions(livePositions);
@@ -370,7 +353,7 @@ export default function LiveTrading() {
             : 0;
 
           try {
-            const ord = await placeMarketWithSlTp(creds, pair.symbol, "BUY", quantity, stopLoss, takeProfit);
+            const ord = await placeMarketWithSlTp(keyId, pair.symbol, "BUY", quantity, stopLoss, takeProfit);
             openSymbols.add(pair.symbol);
             opened++;
             const slStatus = ord?.slOrder ? `SL ✓` : ord?.slError ? `SL ✗(${ord.slError})` : "SL —";
@@ -417,10 +400,10 @@ export default function LiveTrading() {
   // Place manual limit order
   const placeOrderMutation = useMutation({
     mutationFn: async () => {
-       if (!credentials?.apiKey) throw new Error("Credențialele nu sunt disponibile");
+       if (!activeKey?.id) throw new Error("Lipsă cheie API");
        setPlacingOrder(true);
        try {
-         await kucoinRequest(credentials.apiKey, credentials.apiSecret, 'POST', '/api/v1/orders', {
+         await kucoinRequest(activeKey.id, 'POST', '/api/v1/orders', {
            symbol: orderParams.symbol,
            side: orderParams.side.toLowerCase(),
            type: "limit",
@@ -440,10 +423,10 @@ export default function LiveTrading() {
   });
 
   const handleClosePosition = async (pos) => {
-    if (!credentials?.apiKey) return;
+    if (!activeKey?.id) return;
     try {
-      await cancelAllOrders(credentials, pos.symbol);
-      await closePosition(credentials, pos.symbol, pos.positionAmt, hedgeMode);
+      await cancelAllOrders(activeKey.id, pos.symbol);
+      await closePosition(activeKey.id, pos.symbol, pos.positionAmt);
       addLog(`🔴 Închis manual: ${pos.symbol}`);
       setTimeout(fetchPositions, 1000);
     } catch (e) { addLog(`⚠️ Eroare închidere ${pos.symbol}: ${e.message}`); }
