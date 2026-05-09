@@ -23,18 +23,20 @@ Deno.serve(async (req) => {
     const timestamp = Date.now().toString();
     let url = `https://api-futures.kucoin.com${path}`;
     let bodyStr = '';
+    let queryString = '';
 
     if (method === 'GET') {
-      if (Object.keys(params).length > 0) {
-        const qs = new URLSearchParams(params).toString();
-        url += '?' + qs;
+      const paramKeys = Object.keys(params).filter(k => params[k] !== undefined && params[k] !== null && params[k] !== '');
+      if (paramKeys.length > 0) {
+        queryString = new URLSearchParams(paramKeys.reduce((acc, k) => { acc[k] = params[k]; return acc; }, {})).toString();
+        url += '?' + queryString;
       }
     } else {
       bodyStr = JSON.stringify(params);
     }
 
-    // KuCoin signing: message = timestamp + method + path + body
-    const signMessage = timestamp + method + path + bodyStr;
+    // KuCoin signing: message = timestamp + method + path + queryString (for GET) or body (for POST)
+    const signMessage = timestamp + method + path + (queryString || bodyStr);
     
     // HMAC-SHA256 signature
     const encoder = new TextEncoder();
