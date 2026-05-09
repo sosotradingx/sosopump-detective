@@ -74,13 +74,32 @@ Deno.serve(async (req) => {
       body: bodyStr || undefined
     });
 
-    const data = await kucoinRes.json();
+    const responseText = await kucoinRes.text();
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      data = { msg: responseText };
+    }
+
     if (!kucoinRes.ok) {
-      throw new Error(data.msg || `KuCoin error ${kucoinRes.status}: ${JSON.stringify(data)}`);
+      console.error('KuCoin error:', {
+        status: kucoinRes.status,
+        path,
+        method,
+        timestamp,
+        data,
+        headers: {
+          'KC-API-SIGN': signature.substring(0, 20) + '...',
+          'KC-API-TIMESTAMP': timestamp
+        }
+      });
+      throw new Error(`KuCoin ${kucoinRes.status}: ${data.msg || JSON.stringify(data)}`);
     }
 
     return Response.json({ data: data.data || data });
   } catch (error) {
+    console.error('kucoinProxy error:', error.message);
     return Response.json({ error: error.message }, { status: 500 });
   }
 });
