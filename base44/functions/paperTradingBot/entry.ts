@@ -1,12 +1,22 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.25';
 
-async function getPrice(symbol) {
+async function fetchPricesViaLLM(base44, symbols) {
   try {
-    const r = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${symbol}`);
-    const d = await r.json();
-    return d.price ? parseFloat(d.price) : null;
-  } catch {
-    return null;
+    const result = await base44.asServiceRole.integrations.Core.InvokeLLM({
+      prompt: `Get the CURRENT real-time market prices in USD for these cryptocurrency trading pairs: ${symbols.join(", ")}.
+These are Binance perpetual futures symbols. Return ONLY a JSON object with the symbol as key and current price as a number.
+For unknown/delisted symbols return null. Example: {"BTCUSDT": 65000.50, "ETHUSDT": 3200.00, "UNKNOWNUSDT": null}`,
+      add_context_from_internet: true,
+      response_json_schema: {
+        type: "object",
+        properties: {},
+        additionalProperties: true
+      }
+    });
+    return result || {};
+  } catch (e) {
+    console.log(`[BOT] LLM error: ${e.message}`);
+    return {};
   }
 }
 
@@ -14,42 +24,40 @@ Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
 
-    // Fetch ALL paper trades and filter manually (RLS nested data issue with filter)
-    const allTrades = await base44.asServiceRole.entities.PaperTrade.list("-created_date", 1000);
-    const allOpen = allTrades.filter(t => t.status === "open");
+    const allTrades = await base44.asServiceRole.entities.PaperTrade.list("-created_date", 500);
+    const openTrades = allTrades.filter(t => t.status === "open");
 
-    console.log(`Total trades: ${allTrades.length}, Open: ${allOpen.length}`);
+    console.log(`[BOT] Open trades: ${openTrades.length}`);
 
-    if (!allOpen.length) {
+    if (!openTrades.length) {
       return Response.json({ message: "No open trades", closed: [], log: [] });
     }
 
-    // Fetch all prices in parallel
-    const symbols = [...new Set(allOpen.map(t => t.symbol))];
-    const priceMap = {};
-    await Promise.all(symbols.map(async (sym) => {
-      const p = await getPrice(sym);
-      if (p) priceMap[sym] = p;
-    }));
+    const symbols = [...new Set(openTrades.map(t => t.symbol))];
+    console.log(`[BOT] Fetching prices for: ${symbols.join(", ")}`);
 
-    console.log(`Fetched prices for ${Object.keys(priceMap).length} symbols`);
+    const priceMap = await fetchPricesViaLLM(base44, symbols);
+    console.log(`[BOT] Got prices: ${JSON.stringify(priceMap)}`);
 
     const closed = [];
     const log = [];
 
-    for (const trade of allOpen) {
+    for (const trade of openTrades) {
       const cur = priceMap[trade.symbol];
-      if (!cur || !trade.entry_price) continue;
+      if (!cur || !trade.entry_price) {
+        console.log(`[BOT] No price for ${trade.symbol}`);
+        continue;
+      }
 
       const pnlPct = ((cur - trade.entry_price) / trade.entry_price) * 100;
       let reason = null;
 
+      console.log(`[BOT] ${trade.symbol}: cur=${cur} SL=${trade.stop_loss} TP=${trade.take_profit}`);
+
       // SL check FIRST (most critical)
       if (trade.stop_loss > 0 && cur <= trade.stop_loss) {
         reason = "stop_loss";
-      }
-      // TP check second
-      else if (trade.take_profit > 0 && cur >= trade.take_profit) {
+      } else if (trade.take_profit > 0 && cur >= trade.take_profit) {
         reason = "take_profit";
       }
 
@@ -63,18 +71,18 @@ Deno.serve(async (req) => {
           exit_reason: reason,
         });
         closed.push(trade.symbol);
-        log.push(`CLOSED ${trade.symbol} | ${reason} | cur:${cur} | SL:${trade.stop_loss} TP:${trade.take_profit} | P&L:${pnlPct.toFixed(2)}%`);
-        console.log(`CLOSED ${trade.symbol} | ${reason} | cur:${cur} | P&L:${pnlPct.toFixed(2)}%`);
+        log.push(`CLOSED ${trade.symbol} | ${reason} | cur:${cur} | P&L:${pnlPct.toFixed(2)}%`);
+        console.log(`[BOT] CLOSED ${trade.symbol} via ${reason}`);
       }
     }
 
     return Response.json({
-      message: `Checked ${allOpen.length} trades, closed ${closed.length}`,
+      message: `Checked ${openTrades.length} open trades, closed ${closed.length}`,
       closed,
       log,
     });
   } catch (error) {
-    console.error("paperTradingBot error:", error.message);
+    console.error("[BOT] Error:", error.message);
     return Response.json({ error: error.message }, { status: 500 });
   }
 });
