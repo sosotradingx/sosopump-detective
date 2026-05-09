@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { X, Bot, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -7,7 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function AutoTradeSettings({ config, onChange, onClose }) {
-  const set = (key, val) => onChange({ ...config, [key]: val });
+  const [local, setLocal] = React.useState({ ...config });
+  const set = (key, val) => setLocal(prev => ({ ...prev, [key]: val }));
+
+  const handleSave = () => {
+    onChange(local);
+    onClose();
+  };
 
   const ToggleRow = ({ label, configKey, description }) => (
     <div className="flex items-start justify-between gap-3 py-2 border-b border-border/40 last:border-0">
@@ -15,7 +21,7 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
         <Label className="text-sm">{label}</Label>
         {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
       </div>
-      <Switch checked={config[configKey] ?? true} onCheckedChange={v => set(configKey, v)} />
+      <Switch checked={local[configKey] ?? true} onCheckedChange={v => set(configKey, v)} />
     </div>
   );
 
@@ -42,8 +48,8 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
             <h3 className="text-xs font-mono uppercase text-muted-foreground border-b border-border pb-1">📊 Parametri Trading</h3>
 
             <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">Scor Minim Pump ({config.minScore})</Label>
-              <Select value={String(config.minScore)} onValueChange={v => set("minScore", Number(v))}>
+              <Label className="text-xs text-muted-foreground mb-1 block">Scor Minim Pump ({local.minScore})</Label>
+              <Select value={String(local.minScore)} onValueChange={v => set("minScore", Number(v))}>
                 <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {[10,20,30,40,50,60,70,80,90,100].map(n => (
@@ -55,19 +61,19 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
 
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">Valoare Tranzacție (USDT)</Label>
-              <Input type="number" min="10" max="10000" step="10" value={config.tradeSize}
+              <Input type="number" min="10" max="10000" step="10" value={local.tradeSize}
                 onChange={e => set("tradeSize", Number(e.target.value))} className="bg-secondary" />
             </div>
 
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">Max Poziții Deschise</Label>
-              <Input type="number" min="1" max="100" step="1" value={config.maxOpenTrades}
+              <Input type="number" min="1" max="100" step="1" value={local.maxOpenTrades}
                 onChange={e => set("maxOpenTrades", Math.max(1, Number(e.target.value)))} className="bg-secondary" />
             </div>
 
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">Timeframe Analiză</Label>
-              <Select value={config.timeframe} onValueChange={v => set("timeframe", v)}>
+              <Select value={local.timeframe} onValueChange={v => set("timeframe", v)}>
                 <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="1m">1 minut</SelectItem>
@@ -84,7 +90,7 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
 
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">Sursă Piață</Label>
-              <Select value={config.marketSource || "perpetuals"} onValueChange={v => set("marketSource", v)}>
+              <Select value={local.marketSource || "perpetuals"} onValueChange={v => set("marketSource", v)}>
                 <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="perpetuals">🔮 Perpetuals Futures</SelectItem>
@@ -95,7 +101,7 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
 
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">Perechi Scanate (Top N)</Label>
-              <Select value={String(config.scanPairs ?? 100)} onValueChange={v => set("scanPairs", Number(v))}>
+              <Select value={String(local.scanPairs ?? 100)} onValueChange={v => set("scanPairs", Number(v))}>
                 <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="50">Top 50</SelectItem>
@@ -117,12 +123,12 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs text-muted-foreground mb-1 block">Stop Loss (%)</Label>
-                <Input type="number" min="0.5" max="20" step="0.5" value={config.stopLossPct}
+                <Input type="number" min="0.5" max="20" step="0.5" value={local.stopLossPct}
                   onChange={e => set("stopLossPct", Number(e.target.value))} className="bg-secondary" />
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground mb-1 block">Take Profit (%)</Label>
-                <Input type="number" min="1" max="200" step="1" value={config.takeProfitPct}
+                <Input type="number" min="1" max="200" step="1" value={local.takeProfitPct}
                   onChange={e => set("takeProfitPct", Number(e.target.value))} className="bg-secondary" />
               </div>
             </div>
@@ -142,7 +148,7 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
               description="Închide o parte din poziție la primul obiectiv"
             />
 
-            {config.usePartialTP && (
+            {local.usePartialTP && (
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -151,7 +157,7 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
                     </Label>
                     <Input
                       type="number" min="1" max="100" step="1"
-                      value={config.partialTPTarget ?? 10}
+                      value={local.partialTPTarget ?? 10}
                       onChange={e => set("partialTPTarget", Number(e.target.value))}
                       className="bg-secondary"
                     />
@@ -163,7 +169,7 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
                     </Label>
                     <Input
                       type="number" min="10" max="90" step="5"
-                      value={config.partialTPPercent ?? 50}
+                      value={local.partialTPPercent ?? 50}
                       onChange={e => set("partialTPPercent", Number(e.target.value))}
                       className="bg-secondary"
                     />
@@ -176,16 +182,16 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
                   description="SL devine prețul de intrare după TP1"
                 />
                 <div className="bg-primary/5 border border-primary/20 rounded-lg p-2 text-xs text-muted-foreground">
-                  Ex: Intrare $100 → TP1 la +{config.partialTPTarget ?? 10}% ($1{config.partialTPTarget ?? 10}) → închizi {config.partialTPPercent ?? 50}% → restul continuă spre TP2{config.moveSlToBreakeven ? " cu SL la $100" : ""}.
+                  Ex: Intrare $100 → TP1 la +{local.partialTPTarget ?? 10}% ($1{local.partialTPTarget ?? 10}) → închizi {local.partialTPPercent ?? 50}% → restul continuă spre TP2{local.moveSlToBreakeven ? " cu SL la $100" : ""}.
                 </div>
               </>
             )}
 
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">
-                🕐 Cooldown după TP/SL ({config.cooldownMinutes ?? 60} min)
+                🕐 Cooldown după TP/SL ({local.cooldownMinutes ?? 60} min)
               </Label>
-              <Select value={String(config.cooldownMinutes ?? 60)} onValueChange={v => set("cooldownMinutes", Number(v))}>
+              <Select value={String(local.cooldownMinutes ?? 60)} onValueChange={v => set("cooldownMinutes", Number(v))}>
                 <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="0">Fără cooldown</SelectItem>
@@ -220,18 +226,18 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs text-muted-foreground mb-1 block">ADX Prag ({config.adxThreshold ?? 20})</Label>
-                <Input type="number" min="10" max="50" step="5" value={config.adxThreshold ?? 20}
+                <Label className="text-xs text-muted-foreground mb-1 block">ADX Prag ({local.adxThreshold ?? 20})</Label>
+                <Input type="number" min="10" max="50" step="5" value={local.adxThreshold ?? 20}
                   onChange={e => set("adxThreshold", Number(e.target.value))} className="bg-secondary" />
               </div>
               <div>
-                <Label className="text-xs text-muted-foreground mb-1 block">RSI Exhaustion ({config.exhaustionRsi ?? 75})</Label>
-                <Input type="number" min="60" max="95" step="5" value={config.exhaustionRsi ?? 75}
+                <Label className="text-xs text-muted-foreground mb-1 block">RSI Exhaustion ({local.exhaustionRsi ?? 75})</Label>
+                <Input type="number" min="60" max="95" step="5" value={local.exhaustionRsi ?? 75}
                   onChange={e => set("exhaustionRsi", Number(e.target.value))} className="bg-secondary" />
               </div>
               <div>
-                <Label className="text-xs text-muted-foreground mb-1 block">Volume Spike (x{config.volumeMultiplier ?? 2.5})</Label>
-                <Input type="number" min="1.5" max="10" step="0.5" value={config.volumeMultiplier ?? 2.5}
+                <Label className="text-xs text-muted-foreground mb-1 block">Volume Spike (x{local.volumeMultiplier ?? 2.5})</Label>
+                <Input type="number" min="1.5" max="10" step="0.5" value={local.volumeMultiplier ?? 2.5}
                   onChange={e => set("volumeMultiplier", Number(e.target.value))} className="bg-secondary" />
               </div>
             </div>
@@ -244,7 +250,7 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
         </div>
 
         <div className="p-4 border-t border-border sticky bottom-0 bg-card">
-          <Button className="w-full bg-primary" onClick={onClose}>Salvează Setările</Button>
+          <Button className="w-full bg-primary" onClick={handleSave}>Salvează Setările</Button>
         </div>
       </div>
     </div>
