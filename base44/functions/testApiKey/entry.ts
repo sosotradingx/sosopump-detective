@@ -23,7 +23,7 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'API key not found' }, { status: 404 });
     }
     
-    const decrypted = await base44.asServiceRole.functions.invoke('decryptApiSecret', { keyId });
+    const decrypted = await base44.functions.invoke('decryptApiSecret', { keyId });
     const apiSecret = decrypted.data?.secret;
     const apiPassphrase = decrypted.data?.passphrase;
     
