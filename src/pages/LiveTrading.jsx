@@ -176,25 +176,21 @@ export default function LiveTrading() {
   });
 
   useEffect(() => {
-    if (apiKeys.length > 0 && !activeKey) {
-      const active = apiKeys.find(k => k.is_active) || apiKeys[0];
-      setActiveKey(active);
-    }
-  }, [apiKeys, activeKey]);
+     if (apiKeys.length > 0 && !activeKey) {
+       const active = apiKeys.find(k => k.is_active) || apiKeys[0];
+       setActiveKey(active);
+     }
+   }, [apiKeys, activeKey]);
 
-  useEffect(() => {
-    if (!activeKey) return;
-    setCredentials(null);
-    // Decrypt and load real credentials for direct frontend calls
-    getDecryptedCreds(activeKey.id).then(creds => {
-      setCredentials(creds);
-      credentialsRef.current = creds;
-      // KuCoin doesn't use hedge mode like Binance
-      setHedgeMode(false);
-      hedgeModeRef.current = false;
-      addLog(`ℹ️ Conectat la KuCoin Futures`);
-    }).catch(e => addLog(`❌ Eroare credențiale: ${e.message}`));
-  }, [activeKey]);
+   useEffect(() => {
+     if (!activeKey) return;
+     setCredentials({ loaded: true });
+     credentialsRef.current = { loaded: true };
+     // KuCoin doesn't use hedge mode like Binance
+     setHedgeMode(false);
+     hedgeModeRef.current = false;
+     addLog(`ℹ️ Conectat la KuCoin Futures`);
+   }, [activeKey]);
 
   const addLog = (msg) => setBotLog(prev => [`[${new Date().toLocaleTimeString("ro-RO")}] ${msg}`, ...prev.slice(0, 49)]);
 
@@ -224,12 +220,12 @@ export default function LiveTrading() {
   }, [activeKey]);
 
   useEffect(() => {
-    if (!credentials) return;
+    if (!activeKey) return;
     fetchBalance();
     fetchPositions();
     const interval = setInterval(() => { fetchBalance(); fetchPositions(); }, 15000);
     return () => clearInterval(interval);
-  }, [credentials, fetchBalance, fetchPositions]);
+  }, [activeKey, fetchBalance, fetchPositions]);
 
   // --- Auto-bot logic ---
   const runAutoBot = useCallback(async () => {
@@ -387,15 +383,15 @@ export default function LiveTrading() {
   useEffect(() => { runAutoBotRef.current = runAutoBot; }, [runAutoBot]);
 
   useEffect(() => {
-    if (!autoEnabled || !credentials) { clearTimeout(autoIntervalRef.current); return; }
-    runAutoBotRef.current();
-    const scheduleNext = () => {
-      const ms = tfToMs(autoConfigRef.current.timeframe);
-      autoIntervalRef.current = setTimeout(() => { runAutoBotRef.current(); scheduleNext(); }, ms);
-    };
-    scheduleNext();
-    return () => clearTimeout(autoIntervalRef.current);
-  }, [autoEnabled, credentials]);
+     if (!autoEnabled || !activeKey) { clearTimeout(autoIntervalRef.current); return; }
+     runAutoBotRef.current();
+     const scheduleNext = () => {
+       const ms = tfToMs(autoConfigRef.current.timeframe);
+       autoIntervalRef.current = setTimeout(() => { runAutoBotRef.current(); scheduleNext(); }, ms);
+     };
+     scheduleNext();
+     return () => clearTimeout(autoIntervalRef.current);
+   }, [autoEnabled, activeKey]);
 
   // Place manual limit order
   const placeOrderMutation = useMutation({
@@ -472,11 +468,7 @@ export default function LiveTrading() {
           ⚠️ Nu ai nicio cheie API activă. Mergi la <strong>API Keys</strong> pentru a adăuga una.
         </div>
       )}
-      {activeKey && !credentials?.apiKey && (
-        <div className="bg-secondary/50 border border-border rounded-xl p-4 text-sm text-muted-foreground flex items-center gap-2">
-          <Loader2 className="w-4 h-4 animate-spin" /> Se încarcă credențialele API...
-        </div>
-      )}
+
 
       {/* Auto Bot Status Bar */}
       {autoEnabled && (
@@ -510,9 +502,9 @@ export default function LiveTrading() {
           <div className="bg-card border border-border rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
               <p className="text-xs font-mono text-muted-foreground uppercase">Balanță KuCoin</p>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={fetchBalance} disabled={loadingBalance || !credentials}>
-                <RefreshCw className={`w-3 h-3 ${loadingBalance ? "animate-spin" : ""}`} />
-              </Button>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={fetchBalance} disabled={loadingBalance || !activeKey}>
+                  <RefreshCw className={`w-3 h-3 ${loadingBalance ? "animate-spin" : ""}`} />
+                </Button>
             </div>
             {balance?.availableBalance > 0 ? (
               <div className="space-y-1">
@@ -527,9 +519,9 @@ export default function LiveTrading() {
           {/* Manual Order */}
           <Dialog open={orderDialog} onOpenChange={setOrderDialog}>
             <DialogTrigger asChild>
-              <Button className="w-full bg-primary hover:bg-primary/90" disabled={!credentials}>
-                <Zap className="w-4 h-4 mr-2" /> Ordine Manuală
-              </Button>
+              <Button className="w-full bg-primary hover:bg-primary/90" disabled={!activeKey}>
+                  <Zap className="w-4 h-4 mr-2" /> Ordine Manuală
+                </Button>
             </DialogTrigger>
             <DialogContent className="bg-card border-border">
               <DialogHeader>
@@ -564,7 +556,7 @@ export default function LiveTrading() {
                   <Input type="number" step="0.01" value={orderParams.price}
                     onChange={e => setOrderParams({ ...orderParams, price: parseFloat(e.target.value) || 0 })} />
                 </div>
-                <Button onClick={() => placeOrderMutation.mutate()} disabled={placingOrder || !credentials}
+                <Button onClick={() => placeOrderMutation.mutate()} disabled={placingOrder || !activeKey}
                   className="w-full bg-pump-strong hover:bg-pump-strong/90">
                   {placingOrder ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Zap className="w-4 h-4 mr-2" />}
                   Plasează
@@ -590,13 +582,13 @@ export default function LiveTrading() {
                 <Zap className="w-4 h-4 text-primary" />
                 <h3 className="text-sm font-semibold">Poziții Live ({positions.length})</h3>
               </div>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={fetchPositions} disabled={!credentials}>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={fetchPositions} disabled={!activeKey}>
                 <RefreshCw className="w-3 h-3" />
               </Button>
             </div>
             {positions.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground text-sm">
-                {credentials ? (autoEnabled ? "Botul scanează semnale..." : "Nicio poziție deschisă.") : "Conectare API..."}
+                {autoEnabled ? "Botul scanează semnale..." : "Nicio poziție deschisă."}
               </div>
             ) : (
               <div className="overflow-x-auto">
