@@ -44,43 +44,81 @@ function floorToStep(qty, step) {
   return parseFloat((Math.floor(qty / step) * step).toFixed(precision));
 }
 
-// All signed Binance calls go through the backend to avoid CORS
-async function backendBinance(keyId, action, params = {}) {
-  const res = await base44.functions.invoke("binanceApi", { action, keyId, params });
-  if (!res.data.success) throw new Error(res.data.error || `Binance ${action} failed`);
-  return res.data.data;
+// --- Direct Binance signed calls from frontend ---
+async function hmacSha256(message, secret) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
+  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Place a MARKET order + SL + TP via backend
-async function placeMarketWithSlTp(keyId, symbol, side, quantity, stopLoss, takeProfit, hedgeMode) {
+async function binanceRequest(apiKey, apiSecret, method, path, params = {}) {
+  const qs = new URLSearchParams({ ...params, timestamp: Date.now().toString() }).toString();
+  const sig = await hmacSha256(qs, apiSecret);
+  const url = `https://fapi.binance.com${path}?${qs}&signature=${sig}`;
+  const res = await fetch(url, { method, headers: { 'X-MBX-APIKEY': apiKey } });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.msg || `Binance error ${res.status}`);
+  return data;
+}
+
+async function getDecryptedCreds(keyId) {
+  const res = await base44.functions.invoke("decryptApiSecret", { keyId });
+  return { apiKey: res.data.api_key, apiSecret: res.data.secret };
+}
+
+async function placeMarketWithSlTp(creds, symbol, side, quantity, stopLoss, takeProfit, hedgeMode) {
+  const { apiKey, apiSecret } = creds;
+  const closeSide = side === "BUY" ? "SELL" : "BUY";
   const positionSide = side === "BUY" ? "LONG" : "SHORT";
-  const res = await base44.functions.invoke("binanceApi", {
-    action: "placeOrderWithSlTp",
-    keyId,
-    params: { symbol, side, quantity, stopLoss, takeProfit, hedgeMode, positionSide },
+  const closeParams = hedgeMode
+    ? { positionSide, quantity: quantity.toString() }
+    : { reduceOnly: "true", quantity: quantity.toString() };
+  const openParams = hedgeMode ? { positionSide } : {};
+
+  // 1. Main MARKET order
+  const mainOrder = await binanceRequest(apiKey, apiSecret, 'POST', '/fapi/v1/order', {
+    symbol, side, type: 'MARKET', quantity: quantity.toString(), ...openParams
   });
-  const result = res.data;
-  if (!result.success) throw new Error(result.error || "Order failed");
-  if (result.data?.slError) console.warn(`SL failed for ${symbol}: ${result.data.slError}`);
-  if (result.data?.tpError) console.warn(`TP failed for ${symbol}: ${result.data.tpError}`);
-  return result.data;
+
+  const results = { mainOrder, slOrder: null, tpOrder: null, slError: null, tpError: null };
+
+  // 2. Stop Loss
+  if (stopLoss > 0) {
+    try {
+      results.slOrder = await binanceRequest(apiKey, apiSecret, 'POST', '/fapi/v1/order', {
+        symbol, side: closeSide, type: 'STOP_MARKET', stopPrice: stopLoss.toString(), ...closeParams
+      });
+    } catch (e) { results.slError = e.message; }
+  }
+
+  // 3. Take Profit
+  if (takeProfit > 0) {
+    try {
+      results.tpOrder = await binanceRequest(apiKey, apiSecret, 'POST', '/fapi/v1/order', {
+        symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET', stopPrice: takeProfit.toString(), ...closeParams
+      });
+    } catch (e) { results.tpError = e.message; }
+  }
+
+  return results;
 }
 
-// Close a position via backend
-async function closePosition(keyId, symbol, positionAmt, hedgeMode) {
+async function closePosition(creds, symbol, positionAmt, hedgeMode) {
+  const { apiKey, apiSecret } = creds;
   const qty = Math.abs(parseFloat(positionAmt));
   const side = parseFloat(positionAmt) > 0 ? "SELL" : "BUY";
-  const positionSide = parseFloat(positionAmt) > 0 ? "LONG" : "SHORT";
-  const extra = hedgeMode ? { positionSide } : {};
-  return backendBinance(keyId, "placeOrder", {
-    symbol, side, type: "MARKET", quantity: qty.toString(), ...extra,
+  const extra = hedgeMode ? { positionSide: parseFloat(positionAmt) > 0 ? "LONG" : "SHORT" } : {};
+  return binanceRequest(apiKey, apiSecret, 'POST', '/fapi/v1/order', {
+    symbol, side, type: 'MARKET', quantity: qty.toString(), ...extra,
+    ...(hedgeMode ? {} : { reduceOnly: 'true' })
   });
 }
 
-// Cancel all open orders via backend
-async function cancelAllOrders(keyId, symbol) {
-  const res = await base44.functions.invoke("binanceApi", { action: "cancelAllOrders", keyId, params: { symbol } });
-  return res.data;
+async function cancelAllOrders(creds, symbol) {
+  try {
+    await binanceRequest(creds.apiKey, creds.apiSecret, 'DELETE', '/fapi/v1/allOpenOrders', { symbol });
+  } catch (e) { console.warn('cancelAllOrders:', e.message); }
 }
 
 const DEFAULT_AUTO_CONFIG = {
@@ -166,29 +204,30 @@ export default function LiveTrading() {
   useEffect(() => {
     if (!activeKey) return;
     setCredentials(null);
-    // Store keyId — all signed Binance calls go through backend
-    const creds = { keyId: activeKey.id };
-    setCredentials(creds);
-    credentialsRef.current = creds;
-    // Detect hedge mode via backend
-    base44.functions.invoke("binanceApi", { action: "getPositionSideDual", keyId: activeKey.id, params: {} })
-      .then(res => {
-        const hedge = res.data?.data?.dualSidePosition === true;
-        setHedgeMode(hedge);
-        hedgeModeRef.current = hedge;
-        addLog(`ℹ️ Mod poziție: ${hedge ? "Hedge (Dual)" : "One-Way"}`);
-      })
-      .catch(() => addLog(`ℹ️ Mod poziție: One-Way (implicit)`));
+    // Decrypt and load real credentials for direct frontend calls
+    getDecryptedCreds(activeKey.id).then(creds => {
+      setCredentials(creds);
+      credentialsRef.current = creds;
+      // Detect hedge mode
+      binanceRequest(creds.apiKey, creds.apiSecret, 'GET', '/fapi/v1/positionSide/dual', {})
+        .then(data => {
+          const hedge = data?.dualSidePosition === true;
+          setHedgeMode(hedge);
+          hedgeModeRef.current = hedge;
+          addLog(`ℹ️ Mod poziție: ${hedge ? "Hedge (Dual)" : "One-Way"}`);
+        })
+        .catch(() => addLog(`ℹ️ Mod poziție: One-Way (implicit)`));
+    }).catch(e => addLog(`❌ Eroare credențiale: ${e.message}`));
   }, [activeKey]);
 
   const addLog = (msg) => setBotLog(prev => [`[${new Date().toLocaleTimeString("ro-RO")}] ${msg}`, ...prev.slice(0, 49)]);
 
   const fetchBalance = useCallback(async () => {
     const creds = credentialsRef.current;
-    if (!creds?.keyId) return;
+    if (!creds?.apiKey) return;
     setLoadingBalance(true);
     try {
-      const assets = await backendBinance(creds.keyId, "getBalance");
+      const assets = await binanceRequest(creds.apiKey, creds.apiSecret, 'GET', '/fapi/v2/balance', {});
       const list = Array.isArray(assets) ? assets : [];
       const mainAsset = list.reduce((best, a) =>
         parseFloat(a.availableBalance || 0) > parseFloat(best.availableBalance || 0) ? a : best
@@ -204,9 +243,9 @@ export default function LiveTrading() {
 
   const fetchPositions = useCallback(async () => {
     const creds = credentialsRef.current;
-    if (!creds?.keyId) return;
+    if (!creds?.apiKey) return;
     try {
-      const data = await backendBinance(creds.keyId, "getPositionRisk");
+      const data = await binanceRequest(creds.apiKey, creds.apiSecret, 'GET', '/fapi/v2/positionRisk', {});
       setPositions((data || []).filter(p => parseFloat(p.positionAmt) !== 0));
     } catch (e) { console.error("Positions error:", e.message); }
   }, []);
@@ -223,8 +262,7 @@ export default function LiveTrading() {
   const runAutoBot = useCallback(async () => {
     if (botRunningRef.current) return;
     const creds = credentialsRef.current;
-    if (!creds?.keyId) { addLog("⚠️ Bot: credențiale lipsă"); return; }
-    const keyId = creds.keyId;
+    if (!creds?.apiKey) { addLog("⚠️ Bot: credențiale lipsă"); return; }
 
     botRunningRef.current = true;
     setBotRunning(true);
@@ -232,10 +270,10 @@ export default function LiveTrading() {
     const cfg = autoConfigRef.current;
     const isPerpetual = cfg.marketSource !== "spot";
 
-    // Fetch live positions via backend
+    // Fetch live positions directly
     let livePositions = [];
     try {
-      const posData = await backendBinance(keyId, "getPositionRisk");
+      const posData = await binanceRequest(creds.apiKey, creds.apiSecret, 'GET', '/fapi/v2/positionRisk', {});
       livePositions = (posData || []).filter(p => parseFloat(p.positionAmt) !== 0);
       setPositions(livePositions);
     } catch (e) {
@@ -258,8 +296,8 @@ export default function LiveTrading() {
           const analysis = analyzePump(kl);
           if (analysis.totalScore < 20) {
             try {
-              await cancelAllOrders(keyId, pos.symbol);
-              await closePosition(keyId, pos.symbol, pos.positionAmt, hedgeModeRef.current);
+              await cancelAllOrders(creds, pos.symbol);
+              await closePosition(creds, pos.symbol, pos.positionAmt, hedgeModeRef.current);
               cooldownMap.current[pos.symbol] = Date.now() + (cfg.cooldownMinutes || 60) * 60000;
               addLog(`❌ EXIT ${pos.symbol} | Score scăzut (${analysis.totalScore}) | P&L: ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%`);
             } catch (e) { addLog(`⚠️ Eroare exit ${pos.symbol}: ${e.message}`); }
@@ -270,7 +308,7 @@ export default function LiveTrading() {
 
     // Refresh positions after exits
     try {
-      const posData = await backendBinance(keyId, "getPositionRisk");
+      const posData = await binanceRequest(creds.apiKey, creds.apiSecret, 'GET', '/fapi/v2/positionRisk', {});
       livePositions = (posData || []).filter(p => parseFloat(p.positionAmt) !== 0);
       setPositions(livePositions);
     } catch {}
@@ -340,7 +378,7 @@ export default function LiveTrading() {
             : 0;
 
           try {
-            const ord = await placeMarketWithSlTp(keyId, pair.symbol, "BUY", quantity, stopLoss, takeProfit, hedgeModeRef.current);
+            const ord = await placeMarketWithSlTp(creds, pair.symbol, "BUY", quantity, stopLoss, takeProfit, hedgeModeRef.current);
             openSymbols.add(pair.symbol);
             opened++;
             const slStatus = ord?.slOrder ? `SL ✓` : ord?.slError ? `SL ✗(${ord.slError})` : "SL —";
@@ -387,10 +425,10 @@ export default function LiveTrading() {
   // Place manual limit order
   const placeOrderMutation = useMutation({
     mutationFn: async () => {
-      if (!credentials?.keyId) throw new Error("Credențialele nu sunt disponibile");
+      if (!credentials?.apiKey) throw new Error("Credențialele nu sunt disponibile");
       setPlacingOrder(true);
       try {
-        await backendBinance(credentials.keyId, "placeOrder", {
+        await binanceRequest(credentials.apiKey, credentials.apiSecret, 'POST', '/fapi/v1/order', {
           symbol: orderParams.symbol,
           side: orderParams.side,
           type: "LIMIT",
@@ -411,10 +449,10 @@ export default function LiveTrading() {
   });
 
   const handleClosePosition = async (pos) => {
-    if (!credentials?.keyId) return;
+    if (!credentials?.apiKey) return;
     try {
-      await cancelAllOrders(credentials.keyId, pos.symbol);
-      await closePosition(credentials.keyId, pos.symbol, pos.positionAmt, hedgeMode);
+      await cancelAllOrders(credentials, pos.symbol);
+      await closePosition(credentials, pos.symbol, pos.positionAmt, hedgeMode);
       addLog(`🔴 Închis manual: ${pos.symbol}`);
       setTimeout(fetchPositions, 1000);
     } catch (e) { addLog(`⚠️ Eroare închidere ${pos.symbol}: ${e.message}`); }
@@ -460,7 +498,7 @@ export default function LiveTrading() {
           ⚠️ Nu ai nicio cheie API activă. Mergi la <strong>API Keys</strong> pentru a adăuga una.
         </div>
       )}
-      {activeKey && !credentials && (
+      {activeKey && !credentials?.apiKey && (
         <div className="bg-secondary/50 border border-border rounded-xl p-4 text-sm text-muted-foreground flex items-center gap-2">
           <Loader2 className="w-4 h-4 animate-spin" /> Se încarcă credențialele API...
         </div>
