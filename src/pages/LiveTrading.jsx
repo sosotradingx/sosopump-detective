@@ -365,6 +365,7 @@ export default function LiveTrading() {
           const rawQty = cfg.tradeSize / price;
           const quantity = floorToStep(rawQty, stepSize);
           if (quantity <= 0) continue;
+          if (quantity * price < 5) continue; // skip if notional < $5 min
           const pricePrecision = price < 0.0001 ? 8 : price < 0.01 ? 6 : price < 1 ? 5 : price < 100 ? 4 : 2;
           const stopLoss = cfg.autoSL
             ? parseFloat((price * (1 - cfg.stopLossPct / 100)).toFixed(pricePrecision))
