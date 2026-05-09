@@ -70,7 +70,7 @@ export default function Dashboard() {
             <span className="text-primary">🔥</span> Dashboard
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Monitorizare în timp real · Binance Spot
+            Monitorizare în timp real · KuCoin Futures
           </p>
         </div>
         <div className="flex items-center gap-3">
