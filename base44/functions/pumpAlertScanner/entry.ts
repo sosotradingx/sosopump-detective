@@ -79,21 +79,32 @@ function quickScore(klines) {
   return { score, status, volSpike: volSpike.toFixed(2), priceChange: priceChange.toFixed(2), rsi: rsiVal.toFixed(1) };
 }
 
-// ── Fetch Binance data ────────────────────────────────────────────────────────
+// ── Fetch KuCoin data ────────────────────────────────────────────────────────
 async function fetchTopPairs(limit = 50) {
-  const res = await fetch("https://fapi.binance.com/fapi/v1/ticker/24hr");
-  const data = await res.json();
-  return data
-    .filter(t => t.symbol.endsWith("USDT") && parseFloat(t.quoteVolume) > 5000000)
-    .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
-    .slice(0, limit)
-    .map(t => t.symbol);
+  try {
+    const res = await fetch("https://api-futures.kucoin.com/api/v1/contracts/active");
+    const data = await res.json();
+    return data.data
+      .filter(t => t.symbol.endsWith("USDT") && parseFloat(t.turnover24h || 0) > 5000000)
+      .sort((a, b) => parseFloat(b.turnover24h || 0) - parseFloat(a.turnover24h || 0))
+      .slice(0, limit)
+      .map(t => t.symbol);
+  } catch (e) {
+    console.log("[SCANNER] KuCoin error:", e.message);
+    return [];
+  }
 }
 
 async function fetchKlines(symbol, interval = "1h", limit = 50) {
-  const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
-  const res = await fetch(url);
-  return res.json();
+  try {
+    const res = await fetch(`https://api-futures.kucoin.com/api/v1/klines?symbol=${symbol}&type=${interval}&limit=${limit}`);
+    const data = await res.json();
+    // KuCoin returns [time, open, high, low, close, volume]
+    return data.data || [];
+  } catch (e) {
+    console.log(`[SCANNER] KuCoin klines error for ${symbol}:`, e.message);
+    return [];
+  }
 }
 
 // ── Main handler ─────────────────────────────────────────────────────────────

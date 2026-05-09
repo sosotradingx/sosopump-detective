@@ -9,11 +9,26 @@ Deno.serve(async (req) => {
     const { keyId } = await req.json();
     if (!keyId) return Response.json({ error: 'keyId required' }, { status: 400 });
 
-    // Use binanceApi proxy to avoid geo-restrictions
-    const result = await base44.functions.invoke('binanceApi', {
-      action: 'getBalance',
-      keyId: keyId
+    // Test KuCoin API connectivity
+    const apiKey = await base44.asServiceRole.entities.UserApiKey.filter({ id: keyId, created_by: user.email });
+    if (!apiKey || !apiKey.length) {
+      return Response.json({ error: 'API key not found' }, { status: 404 });
+    }
+    
+    const decrypted = await base44.asServiceRole.functions.invoke('decryptApiSecret', { keyId });
+    
+    // Test KuCoin account balance endpoint
+    const kucoinRes = await fetch('https://api.kucoin.com/api/v1/accounts', {
+      headers: {
+        'KC-API-KEY': apiKey[0].api_key,
+        'KC-API-SECRET': decrypted.api_secret,
+        'KC-API-PASSPHRASE': decrypted.api_secret // KuCoin uses passphrase too
+      }
     });
+    
+    if (!kucoinRes.ok) {
+      throw new Error('KuCoin API connection failed');
+    }
 
     return Response.json({
       success: true,

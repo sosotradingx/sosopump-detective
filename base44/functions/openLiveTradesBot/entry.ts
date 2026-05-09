@@ -98,20 +98,21 @@ Deno.serve(async (req) => {
         break;
       }
 
-      // Get current price
+      // Get current price from KuCoin
       let priceData;
       try {
         const res = await fetch(
-          `https://fapi.binance.com/fapi/v1/ticker/price?symbol=${pair.symbol}`,
+          `https://api-futures.kucoin.com/api/v1/ticker?symbol=${pair.symbol}`,
           { headers: { 'Accept': 'application/json' } }
         );
-        priceData = await res.json();
+        const json = await res.json();
+        priceData = json.data;
       } catch (e) {
         console.log(`[OPEN-BOT] Failed to get price for ${pair.symbol}`);
         continue;
       }
 
-      const entryPrice = parseFloat(priceData.price);
+      const entryPrice = parseFloat(priceData?.price || priceData?.lastTradePrice);
       if (!entryPrice) {
         console.log(`[OPEN-BOT] Invalid price for ${pair.symbol}`);
         continue;
@@ -126,27 +127,25 @@ Deno.serve(async (req) => {
 
       console.log(`[OPEN-BOT] Opening ${pair.symbol} @ ${entryPrice} qty=${quantity}`);
 
-      // Create market order via Binance API (backend)
-      const timestamp = Date.now();
-      const payload = {
-        symbol: pair.symbol,
-        side: 'BUY',
-        type: 'MARKET',
-        quantity: quantity,
-        timestamp: timestamp,
-        newClientOrderId: `AUTO-${Date.now()}-BUY`
-      };
-
-      payload.signature = signRequest(payload, apiSecret);
+      // Create market order via KuCoin API
+      const clientOid = `AUTO-${Date.now()}-BUY`;
 
       try {
-        const orderRes = await fetch('https://fapi.binance.com/fapi/v1/order', {
+        const orderRes = await fetch('https://api-futures.kucoin.com/api/v1/orders', {
           method: 'POST',
           headers: {
-            'X-MBX-APIKEY': apiKey.api_key,
-            'Content-Type': 'application/x-www-form-urlencoded'
+            'KC-API-KEY': apiKey.api_key,
+            'KC-API-SECRET': apiSecret,
+            'KC-API-PASSPHRASE': apiSecret,
+            'Content-Type': 'application/json'
           },
-          body: new URLSearchParams(payload).toString()
+          body: JSON.stringify({
+            symbol: pair.symbol,
+            side: 'buy',
+            type: 'market',
+            size: quantity,
+            clientOid: clientOid
+          })
         });
 
         if (!orderRes.ok) {
@@ -156,55 +155,51 @@ Deno.serve(async (req) => {
         }
 
         const order = await orderRes.json();
-        const binanceOrderId = order.orderId;
+        const kucoinOrderId = order.data?.orderId;
 
-        // Set SL order
-        const slPayload = {
-          symbol: pair.symbol,
-          side: 'SELL',
-          type: 'STOP_MARKET',
-          quantity: quantity,
-          stopPrice: slPrice,
-          timestamp: timestamp,
-          newClientOrderId: `AUTO-${Date.now()}-SL`
-        };
-        slPayload.signature = signRequest(slPayload, apiSecret);
-
-        const slRes = await fetch('https://fapi.binance.com/fapi/v1/order', {
+        // Set SL order via KuCoin
+        const slRes = await fetch('https://api-futures.kucoin.com/api/v1/orders', {
           method: 'POST',
           headers: {
-            'X-MBX-APIKEY': apiKey.api_key,
-            'Content-Type': 'application/x-www-form-urlencoded'
+            'KC-API-KEY': apiKey.api_key,
+            'KC-API-SECRET': apiSecret,
+            'KC-API-PASSPHRASE': apiSecret,
+            'Content-Type': 'application/json'
           },
-          body: new URLSearchParams(slPayload).toString()
+          body: JSON.stringify({
+            symbol: pair.symbol,
+            side: 'sell',
+            type: 'stop',
+            stopPrice: slPrice.toString(),
+            size: quantity,
+            clientOid: `AUTO-${Date.now()}-SL`
+          })
         });
 
         const slOrder = slRes.ok ? await slRes.json() : null;
-        const slOrderId = slOrder?.orderId;
+        const slOrderId = slOrder?.data?.orderId;
 
-        // Set TP order
-        const tpPayload = {
-          symbol: pair.symbol,
-          side: 'SELL',
-          type: 'TAKE_PROFIT_MARKET',
-          quantity: quantity,
-          stopPrice: tpPrice,
-          timestamp: timestamp,
-          newClientOrderId: `AUTO-${Date.now()}-TP`
-        };
-        tpPayload.signature = signRequest(tpPayload, apiSecret);
-
-        const tpRes = await fetch('https://fapi.binance.com/fapi/v1/order', {
+        // Set TP order via KuCoin
+        const tpRes = await fetch('https://api-futures.kucoin.com/api/v1/orders', {
           method: 'POST',
           headers: {
-            'X-MBX-APIKEY': apiKey.api_key,
-            'Content-Type': 'application/x-www-form-urlencoded'
+            'KC-API-KEY': apiKey.api_key,
+            'KC-API-SECRET': apiSecret,
+            'KC-API-PASSPHRASE': apiSecret,
+            'Content-Type': 'application/json'
           },
-          body: new URLSearchParams(tpPayload).toString()
+          body: JSON.stringify({
+            symbol: pair.symbol,
+            side: 'sell',
+            type: 'limit',
+            price: tpPrice.toString(),
+            size: quantity,
+            clientOid: `AUTO-${Date.now()}-TP`
+          })
         });
 
         const tpOrder = tpRes.ok ? await tpRes.json() : null;
-        const tpOrderId = tpOrder?.orderId;
+        const tpOrderId = tpOrder?.data?.orderId;
 
         // Log trade to DB
         await base44.asServiceRole.entities.LiveTrade.create({
@@ -217,7 +212,7 @@ Deno.serve(async (req) => {
           notional_usd: tradeSize,
           stop_loss: slPrice,
           take_profit: tpPrice,
-          binance_order_id: binanceOrderId?.toString(),
+          binance_order_id: kucoinOrderId?.toString(),
           sl_order_id: slOrderId?.toString(),
           tp_order_id: tpOrderId?.toString(),
           created_by: user.email,
