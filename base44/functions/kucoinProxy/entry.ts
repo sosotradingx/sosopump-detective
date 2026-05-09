@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
     // KuCoin signing: message = timestamp + method + path + queryString (for GET) or body (for POST)
     const signMessage = timestamp + method + path + (queryString || bodyStr);
     
-    // HMAC-SHA256 signature (hex encoding)
+    // HMAC-SHA256 signature in BASE64
     const encoder = new TextEncoder();
     const secretKey = await crypto.subtle.importKey(
       'raw',
@@ -48,18 +48,10 @@ Deno.serve(async (req) => {
       ['sign']
     );
     const sigBuffer = await crypto.subtle.sign('HMAC', secretKey, encoder.encode(signMessage));
-    const signature = Array.from(new Uint8Array(sigBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    const signature = btoa(String.fromCharCode(...new Uint8Array(sigBuffer)));
 
-    // Hash passphrase - HMAC-SHA256(passphrase, apiSecret) as hex
-    const passphraseKey = await crypto.subtle.importKey(
-      'raw',
-      encoder.encode(apiSecret),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign']
-    );
-    const passBuffer = await crypto.subtle.sign('HMAC', passphraseKey, encoder.encode(apiPassphrase));
-    const passphraseHash = Array.from(new Uint8Array(passBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    // Passphrase sent directly (no hashing)
+    const passphraseHash = apiPassphrase;
 
     // Make KuCoin request
     const kucoinRes = await fetch(url, {

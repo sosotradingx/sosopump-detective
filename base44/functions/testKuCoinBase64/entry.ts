@@ -38,8 +38,8 @@ Deno.serve(async (req) => {
       return btoa(String.fromCharCode(...new Uint8Array(sig)));
     }
     
-    const sig = await hmacSha256Hex(msg, apiSecret);
-    const passHash = await hmacSha256Base64(apiPassphrase, apiSecret);
+    const sig = await hmacSha256Base64(msg, apiSecret);
+    const passHash = apiPassphrase; // Send passphrase directly, NO hashing
     
     console.log('[TEST] Using Base64 encoding for /api/v1/account');
     console.log('Signature:', sig.substring(0, 30) + '...');
