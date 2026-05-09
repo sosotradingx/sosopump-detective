@@ -125,6 +125,16 @@ export default function ApiSettings() {
                 onChange={e => setF("label", e.target.value)} className="bg-secondary mt-1" />
             </div>
             <div>
+              <Label className="text-xs text-muted-foreground">Tip Piață</Label>
+              <Select value={form.market_type} onValueChange={v => setF("market_type", v)}>
+                <SelectTrigger className="bg-secondary mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="futures">Futures (USDT-M)</SelectItem>
+                  <SelectItem value="spot">Spot</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label className="text-xs text-muted-foreground">API Key *</Label>
               <Input placeholder="KuCoin API Key" value={form.api_key}
                 onChange={e => setF("api_key", e.target.value)} className="bg-secondary mt-1 font-mono text-xs" required />
@@ -150,7 +160,7 @@ export default function ApiSettings() {
               <div className="relative mt-1">
                 <Input
                   type={showPassphrase ? "text" : "password"}
-                  placeholder="KuCoin Trading Passphrase"
+                  placeholder="cacat12345"
                   value={form.api_passphrase}
                   onChange={e => setF("api_passphrase", e.target.value)}
                   className="bg-secondary font-mono text-xs pr-10" required
@@ -160,16 +170,6 @@ export default function ApiSettings() {
                   {showPassphrase ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Tip Piață</Label>
-              <Select value={form.market_type} onValueChange={v => setF("market_type", v)}>
-                <SelectTrigger className="bg-secondary mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="futures">Futures (USDT-M)</SelectItem>
-                  <SelectItem value="spot">Spot</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
             <div className="flex gap-2 pt-2">
               <Button type="submit" className="bg-primary" disabled={createMutation.isPending}>
