@@ -14,8 +14,11 @@ Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
 
-    // Fetch ALL open paper trades (all users)
-    const allOpen = await base44.asServiceRole.entities.PaperTrade.filter({ status: "open" }, "-created_date", 500);
+    // Fetch ALL paper trades and filter manually (RLS nested data issue with filter)
+    const allTrades = await base44.asServiceRole.entities.PaperTrade.list("-created_date", 1000);
+    const allOpen = allTrades.filter(t => t.status === "open");
+
+    console.log(`Total trades: ${allTrades.length}, Open: ${allOpen.length}`);
 
     if (!allOpen.length) {
       return Response.json({ message: "No open trades", closed: [], log: [] });
@@ -28,6 +31,8 @@ Deno.serve(async (req) => {
       const p = await getPrice(sym);
       if (p) priceMap[sym] = p;
     }));
+
+    console.log(`Fetched prices for ${Object.keys(priceMap).length} symbols`);
 
     const closed = [];
     const log = [];
@@ -59,10 +64,9 @@ Deno.serve(async (req) => {
         });
         closed.push(trade.symbol);
         log.push(`CLOSED ${trade.symbol} | ${reason} | cur:${cur} | SL:${trade.stop_loss} TP:${trade.take_profit} | P&L:${pnlPct.toFixed(2)}%`);
+        console.log(`CLOSED ${trade.symbol} | ${reason} | cur:${cur} | P&L:${pnlPct.toFixed(2)}%`);
       }
     }
-
-    console.log(`Checked ${allOpen.length} trades, closed ${closed.length}`, log);
 
     return Response.json({
       message: `Checked ${allOpen.length} trades, closed ${closed.length}`,
