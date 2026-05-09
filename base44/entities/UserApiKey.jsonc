@@ -4,11 +4,15 @@
   "properties": {
     "api_key": {
       "type": "string",
-      "description": "Binance API Key al utilizatorului"
+      "description": "KuCoin API Key"
     },
     "api_secret": {
       "type": "string",
-      "description": "Binance API Secret al utilizatorului (stocat criptat)"
+      "description": "KuCoin API Secret (stocat criptat)"
+    },
+    "api_passphrase": {
+      "type": "string",
+      "description": "KuCoin Trading Passphrase (6 cifre, stocat criptat)"
     },
     "market_type": {
       "type": "string",
@@ -17,7 +21,7 @@
         "futures"
       ],
       "default": "futures",
-      "description": "Tip pia\u021b\u0103: Spot sau Futures (USDT-M)"
+      "description": "Tip pia\u021b\u0103: Spot sau Futures"
     },
     "is_active": {
       "type": "boolean",
@@ -46,7 +50,8 @@
   },
   "required": [
     "api_key",
-    "api_secret"
+    "api_secret",
+    "api_passphrase"
   ],
   "rls": {
     "create": {

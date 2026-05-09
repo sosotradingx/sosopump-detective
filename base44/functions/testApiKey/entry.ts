@@ -25,6 +25,11 @@ Deno.serve(async (req) => {
     
     const decrypted = await base44.asServiceRole.functions.invoke('decryptApiSecret', { keyId });
     const apiSecret = decrypted.data?.secret || decrypted.api_secret;
+    const apiPassphrase = decrypted.data?.passphrase || decrypted.api_passphrase;
+    
+    if (!apiPassphrase) {
+      throw new Error('Trading Passphrase is missing - update your API key with the 6-digit passphrase');
+    }
     
     // KuCoin Futures test with proper signing
     const timestamp = Date.now();
@@ -38,7 +43,7 @@ Deno.serve(async (req) => {
         'KC-API-KEY': apiKeyRecord[0].api_key,
         'KC-API-SIGN': signature,
         'KC-API-TIMESTAMP': timestamp.toString(),
-        'KC-API-PASSPHRASE': apiSecret,
+        'KC-API-PASSPHRASE': apiPassphrase,
         'Accept': 'application/json'
       }
     });

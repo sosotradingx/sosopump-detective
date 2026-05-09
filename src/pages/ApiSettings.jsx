@@ -16,8 +16,9 @@ export default function ApiSettings() {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
+  const [showPassphrase, setShowPassphrase] = useState(false);
   const [testing, setTesting] = useState(null);
-  const [form, setForm] = useState({ api_key: "", api_secret: "", market_type: "futures", label: "" });
+  const [form, setForm] = useState({ api_key: "", api_secret: "", api_passphrase: "", market_type: "futures", label: "" });
 
   const [user, setUser] = React.useState(null);
   React.useEffect(() => { base44.auth.me().then(setUser).catch(() => {}); }, []);
@@ -33,7 +34,7 @@ export default function ApiSettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["userApiKeys"] });
       setShowForm(false);
-      setForm({ api_key: "", api_secret: "", market_type: "futures", label: "" });
+      setForm({ api_key: "", api_secret: "", api_passphrase: "", market_type: "futures", label: "" });
     },
   });
 
@@ -141,6 +142,22 @@ export default function ApiSettings() {
                 <button type="button" onClick={() => setShowSecret(!showSecret)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                   {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Trading Passphrase (6 cifre) *</Label>
+              <div className="relative mt-1">
+                <Input
+                  type={showPassphrase ? "text" : "password"}
+                  placeholder="KuCoin Trading Passphrase"
+                  value={form.api_passphrase}
+                  onChange={e => setF("api_passphrase", e.target.value)}
+                  className="bg-secondary font-mono text-xs pr-10" required
+                />
+                <button type="button" onClick={() => setShowPassphrase(!showPassphrase)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  {showPassphrase ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
