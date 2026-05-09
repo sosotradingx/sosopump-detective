@@ -105,8 +105,11 @@ export default function LiveTrading() {
     setLoadingBalance(true);
     try {
       const assets = await binanceFetch('/fapi/v2/balance', credentials.apiKey, credentials.apiSecret);
-      const usdt = assets.find(a => a.asset === "USDT") || {};
-      const usdc = assets.find(a => a.asset === "USDC") || {};
+      console.log('BALANCE RESPONSE:', JSON.stringify(assets));
+      const list = Array.isArray(assets) ? assets : [];
+      const usdt = list.find(a => a.asset === "USDT") || {};
+      const usdc = list.find(a => a.asset === "USDC") || {};
+      console.log('USDT:', usdt, 'USDC:', usdc);
       const availableBalance = parseFloat(usdt.availableBalance || 0) + parseFloat(usdc.availableBalance || 0);
       const totalWallet = parseFloat(usdt.balance || 0) + parseFloat(usdc.balance || 0);
       setBalance({ availableBalance, totalWallet });
