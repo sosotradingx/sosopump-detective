@@ -34,9 +34,15 @@ export default function Scanner() {
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState(0);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("score");
-  const [sortDir, setSortDir] = useState("desc");
+  const [statusFilter, setStatusFilter] = useState(() => {
+    try { return localStorage.getItem("soso_scanner_status") || "all"; } catch { return "all"; }
+  });
+  const [sortBy, setSortBy] = useState(() => {
+    try { return localStorage.getItem("soso_scanner_sortby") || "score"; } catch { return "score"; }
+  });
+  const [sortDir, setSortDir] = useState(() => {
+    try { return localStorage.getItem("soso_scanner_sortdir") || "desc"; } catch { return "desc"; }
+  });
   const [lastUpdate, setLastUpdate] = useState(null);
   const [selectedSymbol, setSelectedSymbol] = useState(null);
   const [selectedPair, setSelectedPair] = useState(null);
@@ -71,10 +77,22 @@ export default function Scanner() {
     return DEFAULT_SETTINGS;
   });
 
-  // Persist scanner settings
+  // Persist scanner settings + filters
   useEffect(() => {
     try { localStorage.setItem("soso_scanner_settings", JSON.stringify(settings)); } catch {}
   }, [settings]);
+
+  useEffect(() => {
+    try { localStorage.setItem("soso_scanner_status", statusFilter); } catch {}
+  }, [statusFilter]);
+
+  useEffect(() => {
+    try { localStorage.setItem("soso_scanner_sortby", sortBy); } catch {}
+  }, [sortBy]);
+
+  useEffect(() => {
+    try { localStorage.setItem("soso_scanner_sortdir", sortDir); } catch {}
+  }, [sortDir]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
