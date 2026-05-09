@@ -6,7 +6,25 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Missing credentials' }, { status: 400 });
     }
 
-    // Helper: HMAC-SHA256 as BASE64
+    // Helper: HMAC-SHA256 in HEX
+    async function hmacSha256Hex(message, secret) {
+      const encoder = new TextEncoder();
+      const key = await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(secret),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+      const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
+      return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    const timestamp = Date.now().toString();
+    const path = '/api/v1/account-overview';
+    const msg = `${timestamp}GET${path}`;
+    
+    // Signature in HEX, passphrase in BASE64
     async function hmacSha256Base64(message, secret) {
       const encoder = new TextEncoder();
       const key = await crypto.subtle.importKey(
@@ -19,14 +37,8 @@ Deno.serve(async (req) => {
       const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
       return btoa(String.fromCharCode(...new Uint8Array(sig)));
     }
-
-    const timestamp = Date.now().toString();
     
-    // Test with Base64 encoding
-    const path = '/api/v1/account-overview';
-    const msg = `${timestamp}GET${path}`;
-    const sig = await hmacSha256Base64(msg, apiSecret);
-    // Passphrase: HMAC-SHA256(passphrase, secret) in BASE64
+    const sig = await hmacSha256Hex(msg, apiSecret);
     const passHash = await hmacSha256Base64(apiPassphrase, apiSecret);
     
     console.log('[TEST] Using Base64 encoding for /api/v1/account');
