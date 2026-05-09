@@ -36,6 +36,7 @@ Deno.serve(async (req) => {
     const path = '/api/v1/accounts';
     const message = `${timestamp}GET${path}`;
     const signature = await hmacSha256(message, apiSecret);
+    const passphraseHash = await hmacSha256(apiPassphrase, apiSecret);
     
     const kucoinRes = await fetch(`https://api-futures.kucoin.com${path}`, {
       method: 'GET',
@@ -43,7 +44,7 @@ Deno.serve(async (req) => {
         'KC-API-KEY': apiKeyRecord[0].api_key,
         'KC-API-SIGN': signature,
         'KC-API-TIMESTAMP': timestamp.toString(),
-        'KC-API-PASSPHRASE': apiPassphrase,
+        'KC-API-PASSPHRASE': passphraseHash,
         'Accept': 'application/json'
       }
     });
