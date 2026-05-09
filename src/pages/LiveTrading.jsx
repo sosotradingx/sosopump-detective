@@ -79,7 +79,10 @@ async function placeMarketWithSlTp(creds, symbol, side, quantity, stopLoss, take
   const closePositionSide = side === "BUY" ? "LONG" : "SHORT";
 
   const baseParams = hedgeMode ? { positionSide } : {};
-  const closeParams = hedgeMode ? { positionSide: closePositionSide } : { closePosition: "true" };
+  // Use quantity + reduceOnly (more reliable than closePosition=true)
+  const closeParams = hedgeMode
+    ? { positionSide: closePositionSide, quantity: quantity.toString() }
+    : { reduceOnly: "true", quantity: quantity.toString() };
 
   // Main market order
   const order = await binanceFetch('/fapi/v1/order', creds.apiKey, creds.apiSecret, {
@@ -88,18 +91,20 @@ async function placeMarketWithSlTp(creds, symbol, side, quantity, stopLoss, take
 
   // Stop Loss order
   if (stopLoss > 0) {
-    await binanceFetch('/fapi/v1/order', creds.apiKey, creds.apiSecret, {
+    const slResult = await binanceFetch('/fapi/v1/order', creds.apiKey, creds.apiSecret, {
       symbol, side: closeSide, type: "STOP_MARKET",
       stopPrice: stopLoss.toString(), ...closeParams,
-    }, 'POST').catch(() => {});
+    }, 'POST').catch(e => ({ error: e.message }));
+    if (slResult?.error) console.warn(`SL order failed for ${symbol}: ${slResult.error}`);
   }
 
   // Take Profit order
   if (takeProfit > 0) {
-    await binanceFetch('/fapi/v1/order', creds.apiKey, creds.apiSecret, {
+    const tpResult = await binanceFetch('/fapi/v1/order', creds.apiKey, creds.apiSecret, {
       symbol, side: closeSide, type: "TAKE_PROFIT_MARKET",
       stopPrice: takeProfit.toString(), ...closeParams,
-    }, 'POST').catch(() => {});
+    }, 'POST').catch(e => ({ error: e.message }));
+    if (tpResult?.error) console.warn(`TP order failed for ${symbol}: ${tpResult.error}`);
   }
 
   return order;
@@ -375,10 +380,10 @@ export default function LiveTrading() {
             : 0;
 
           try {
-            await placeMarketWithSlTp(creds, pair.symbol, "BUY", quantity, stopLoss, takeProfit, hedgeModeRef.current);
+            const ord = await placeMarketWithSlTp(creds, pair.symbol, "BUY", quantity, stopLoss, takeProfit, hedgeModeRef.current);
             openSymbols.add(pair.symbol);
             opened++;
-            addLog(`✅ CUMPĂRAT ${pair.symbol} | Score: ${analysis.totalScore} | Qty: ${quantity} | SL: ${stopLoss} | TP: ${takeProfit}`);
+            addLog(`✅ CUMPĂRAT ${pair.symbol} | Score: ${analysis.totalScore} | Qty: ${quantity} | SL: ${stopLoss || "—"} | TP: ${takeProfit || "—"}`);
           } catch (e) {
             addLog(`⚠️ Eroare ordine ${pair.symbol}: ${e.message}`);
           }
