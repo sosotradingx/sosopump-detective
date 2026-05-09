@@ -14,7 +14,7 @@ import PlanGate from "@/components/PlanGate";
 export default function ApiSettings() {
   const { isPro, loading: subLoading } = useSubscription();
   const queryClient = useQueryClient();
-  const [showForm, setShowForm] = useState(true);
+  const [showForm, setShowForm] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
   const [showPassphrase, setShowPassphrase] = useState(false);
   const [testing, setTesting] = useState(null);
