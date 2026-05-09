@@ -61,13 +61,8 @@ export default function PaperTrading() {
   // cooldownMap: { [symbol]: timestamp when cooldown expires }
   const cooldownMap = useRef({});
 
-  // Persist config & enabled state to localStorage AND user entity
-  useEffect(() => { 
-    saveAutoConfig(autoConfig);
-    if (user) {
-      base44.auth.updateMe({ bot_config: autoConfig }).catch(() => {});
-    }
-  }, [autoConfig, user]);
+  // Persist config & enabled state to localStorage
+  useEffect(() => { saveAutoConfig(autoConfig); }, [autoConfig]);
   useEffect(() => { try { localStorage.setItem("soso_auto_enabled", String(autoEnabled)); } catch {} }, [autoEnabled]);
   const [botLog, setBotLog] = useState([]);
   const [botRunning, setBotRunning] = useState(false);
