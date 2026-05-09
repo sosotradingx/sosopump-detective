@@ -272,10 +272,26 @@ export default function PaperTrading() {
 
     // --- Open new trades ---
     const freshUser = await base44.auth.me();
-    const freshOpen = freshUser
-      ? (await base44.entities.PaperTrade.filter({ created_by: freshUser.email }, "-created_date", 100)).filter(t => t.status === "open")
+    const allFreshTrades = freshUser
+      ? await base44.entities.PaperTrade.filter({ created_by: freshUser.email }, "-created_date", 200)
       : [];
+    const freshOpen = allFreshTrades.filter(t => t.status === "open");
+    const freshClosed = allFreshTrades.filter(t => t.status === "closed");
     const openSymbols = new Set(freshOpen.map(t => t.symbol));
+
+    // Calcul balanță disponibilă REAL din DB
+    const INITIAL_BALANCE = 10000;
+    const realizedPnL = freshClosed.reduce((s, t) => s + (t.pnl_usd || 0), 0);
+    const lockedCapital = freshOpen.reduce((s, t) => s + (t.entry_price * t.quantity), 0);
+    const availableBalance = INITIAL_BALANCE + realizedPnL - lockedCapital;
+
+    if (availableBalance < cfg.tradeSize) {
+      log(`🚫 Balanță insuficientă: $${availableBalance.toFixed(2)} < $${cfg.tradeSize} necesar`);
+      botRunningRef.current = false;
+      setBotRunning(false);
+      queryClient.invalidateQueries({ queryKey: ["paper-trades"] });
+      return;
+    }
 
     if (freshOpen.length >= cfg.maxOpenTrades) {
       log(`⏸ Max poziții atinse (${cfg.maxOpenTrades})`);
@@ -286,7 +302,6 @@ export default function PaperTrading() {
     }
 
     const now = Date.now();
-    // Take top candidates by volume, process in batches of 25 with 300ms delay
     const candidates = pairs
       .filter(p => !openSymbols.has(p.symbol))
       .filter(p => !(cooldownMap.current[p.symbol] > now))
@@ -296,11 +311,15 @@ export default function PaperTrading() {
     let scanned = 0;
     let topScore = 0;
     let topSymbol = "";
+    // Balanță curentă în timp real în timpul scanului (se scade pe măsură ce deschide)
+    let runningBalance = availableBalance;
+
     const BATCH = 25;
     outer: for (let bi = 0; bi < candidates.length; bi += BATCH) {
       const chunk = candidates.slice(bi, bi + BATCH);
       for (const pair of chunk) {
       if (freshOpen.length + opened >= cfg.maxOpenTrades) break outer;
+      if (runningBalance < cfg.tradeSize) break outer; // STOP dacă nu mai e capital
       if (openSymbols.has(pair.symbol)) continue;
 
       const kl = await fetchKlines(pair.symbol, cfg.timeframe, 80, isPerpetual);
@@ -324,6 +343,10 @@ export default function PaperTrading() {
       }
 
       if (analysis.totalScore >= cfg.minScore) {
+        if (runningBalance < cfg.tradeSize) {
+          log(`🚫 Capital insuficient pentru ${pair.symbol}: $${runningBalance.toFixed(2)} disponibil`);
+          break outer;
+        }
         const price = priceMap[pair.symbol] || pair.price;
         const precisionFactor = price < 0.001 ? 1e10 : price < 0.01 ? 1e8 : price < 1 ? 1e6 : 1e4;
         const quantity = Math.floor((cfg.tradeSize / price) * 1000) / 1000;
@@ -342,11 +365,11 @@ export default function PaperTrading() {
           notes: `Auto | TF:${cfg.timeframe} | Score:${analysis.totalScore} | ${analysis.pumpStatus}`,
         });
         openSymbols.add(pair.symbol);
-        log(`✅ DESCHIS ${pair.symbol} | Score: ${analysis.totalScore} | SL:${stopLoss} TP:${takeProfit}`);
+        runningBalance -= cfg.tradeSize; // scade balanța imediat
+        log(`✅ DESCHIS ${pair.symbol} | Score: ${analysis.totalScore} | Balanță rămasă: $${runningBalance.toFixed(2)}`);
         opened++;
       }
       }
-      // Delay between batches to respect rate limits
       if (bi + BATCH < candidates.length) await new Promise(r => setTimeout(r, 300));
     }
 
