@@ -14,8 +14,6 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache dumb-init
-
 COPY package*.json ./
 RUN npm ci --only=production
 
@@ -25,5 +23,4 @@ EXPOSE 4173
 
 ENV NODE_ENV=production
 
-ENTRYPOINT ["/usr/sbin/dumb-init", "--"]
 CMD ["npm", "run", "preview", "--", "--host", "0.0.0.0"]
