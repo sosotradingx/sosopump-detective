@@ -67,7 +67,7 @@ async function kucoinRequest(apiKey, apiSecret, method, path, params = {}) {
 
 async function getDecryptedCreds(keyId) {
   const res = await base44.functions.invoke("decryptApiSecret", { keyId });
-  return { apiKey: res.data.api_key, apiSecret: res.data.secret };
+  return { apiKey: res.data?.key, apiSecret: res.data?.secret, apiPassphrase: res.data?.passphrase };
 }
 
 async function placeMarketWithSlTp(creds, symbol, side, quantity, stopLoss, takeProfit) {
