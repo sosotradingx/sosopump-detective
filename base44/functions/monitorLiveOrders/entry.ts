@@ -123,6 +123,8 @@ Deno.serve(async (req) => {
             if (apiKeys.length > 0) {
               const apiKey = apiKeys[0];
               const decrypted = await base44.asServiceRole.functions.invoke('decryptApiSecret', { keyId: apiKey.id });
+              const apiSecret = decrypted.data?.secret || decrypted.secret;
+              const apiPassphrase = decrypted.data?.passphrase || decrypted.passphrase;
 
               // Place close order via KuCoin
               try {
@@ -130,8 +132,8 @@ Deno.serve(async (req) => {
                   method: 'POST',
                   headers: {
                     'KC-API-KEY': apiKey.api_key,
-                    'KC-API-SECRET': decrypted.api_secret,
-                    'KC-API-PASSPHRASE': decrypted.api_secret,
+                    'KC-API-SECRET': apiSecret,
+                    'KC-API-PASSPHRASE': apiPassphrase,
                     'Content-Type': 'application/json'
                   },
                   body: JSON.stringify({

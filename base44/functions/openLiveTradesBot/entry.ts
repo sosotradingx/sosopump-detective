@@ -40,13 +40,14 @@ Deno.serve(async (req) => {
 
     const apiKey = apiKeys[0];
 
-    // Decrypt API secret via backend function
-    let apiSecret;
+    // Decrypt API secrets via backend function
+    let apiSecret, apiPassphrase;
     try {
       const decryptRes = await base44.asServiceRole.functions.invoke('decryptApiSecret', {
         keyId: apiKey.id
       });
-      apiSecret = decryptRes.api_secret;
+      apiSecret = decryptRes.data?.secret || decryptRes.secret;
+      apiPassphrase = decryptRes.data?.passphrase || decryptRes.passphrase;
     } catch (e) {
       console.log('[OPEN-BOT] Failed to decrypt secret:', e.message);
       return Response.json({ error: 'Failed to decrypt API secret' }, { status: 500 });
@@ -136,7 +137,7 @@ Deno.serve(async (req) => {
           headers: {
             'KC-API-KEY': apiKey.api_key,
             'KC-API-SECRET': apiSecret,
-            'KC-API-PASSPHRASE': apiSecret,
+            'KC-API-PASSPHRASE': apiPassphrase,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -163,7 +164,7 @@ Deno.serve(async (req) => {
           headers: {
             'KC-API-KEY': apiKey.api_key,
             'KC-API-SECRET': apiSecret,
-            'KC-API-PASSPHRASE': apiSecret,
+            'KC-API-PASSPHRASE': apiPassphrase,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -185,7 +186,7 @@ Deno.serve(async (req) => {
           headers: {
             'KC-API-KEY': apiKey.api_key,
             'KC-API-SECRET': apiSecret,
-            'KC-API-PASSPHRASE': apiSecret,
+            'KC-API-PASSPHRASE': apiPassphrase,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

@@ -22,10 +22,10 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
-    // For now, return the secret as-is (in production, decrypt if encrypted)
-    // Base44 recommends storing secrets in a secure way
+    // Return all 3 KuCoin credentials
     return Response.json({
       secret: key.api_secret,
+      passphrase: key.api_passphrase,
       key: key.api_key,
     });
   } catch (error) {
