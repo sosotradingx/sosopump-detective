@@ -14,6 +14,14 @@ import { Switch } from "@/components/ui/switch";
 import { Loader2, Zap, RefreshCw, AlertTriangle, Bot, Settings, Activity } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
 import PlanGate from "@/components/PlanGate";
+import {
+  getFuturesBalance,
+  getFuturesPositions,
+  getHedgeMode,
+  placeOrderWithSlTp as placeBrowserOrder,
+  closePosition as closeBrowserPosition,
+  cancelAllOrders as cancelBrowserOrders
+} from "@/lib/binanceClient";
 
 // --- Helpers ---
 const stepSizeCache = {};
@@ -36,41 +44,6 @@ function floorToStep(qty, step) {
   if (!step || step === 0) return qty;
   const precision = Math.max(0, Math.round(-Math.log10(step)));
   return parseFloat((Math.floor(qty / step) * step).toFixed(precision));
-}
-
-// --- Binance API calls via backend ---
-async function binanceRequest(keyId, action, params = {}) {
-  const res = await base44.functions.invoke('binanceApi', { keyId, action, params });
-  if (!res.data?.success) throw new Error(res.data?.error || 'Binance request failed');
-  return res.data.data;
-}
-
-async function placeBinanceOrderWithSlTp(keyId, symbol, side, quantity, stopLoss, takeProfit, hedgeMode) {
-  const res = await base44.functions.invoke('binanceApi', {
-    keyId,
-    action: 'placeOrderWithSlTp',
-    params: { symbol, side, quantity, stopLoss, takeProfit, hedgeMode, positionSide: side === 'BUY' ? 'LONG' : 'SHORT' }
-  });
-  if (!res.data?.success) throw new Error(res.data?.error || 'Order failed');
-  return res.data.data;
-}
-
-async function closeBinancePosition(keyId, symbol, positionAmt, hedgeMode) {
-  const qty = Math.abs(parseFloat(positionAmt));
-  const side = parseFloat(positionAmt) > 0 ? "SELL" : "BUY";
-  const params = { symbol, side, type: "MARKET", quantity: qty.toString() };
-  if (hedgeMode) {
-    params.positionSide = parseFloat(positionAmt) > 0 ? "LONG" : "SHORT";
-  } else {
-    params.reduceOnly = "true";
-  }
-  return binanceRequest(keyId, 'placeOrder', params);
-}
-
-async function cancelAllBinanceOrders(keyId, symbol) {
-  try {
-    await binanceRequest(keyId, 'cancelAllOrders', { symbol });
-  } catch (e) { console.warn('cancelAllOrders:', e.message); }
 }
 
 const DEFAULT_AUTO_CONFIG = {
@@ -108,6 +81,7 @@ export default function LiveTrading() {
   const { isPro, loading: subLoading } = useSubscription();
   const [user, setUser] = useState(null);
   const [activeKey, setActiveKey] = useState(null);
+  const [creds, setCreds] = useState(null); // { apiKey, apiSecret } decriptate
   const [balance, setBalance] = useState(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
   const [positions, setPositions] = useState([]);
@@ -115,6 +89,7 @@ export default function LiveTrading() {
   const [placingOrder, setPlacingOrder] = useState(false);
   const [orderParams, setOrderParams] = useState({ symbol: "BTCUSDT", side: "BUY", quantity: 0.001, stopLoss: 0, takeProfit: 0 });
   const [hedgeMode, setHedgeMode] = useState(false);
+  const credsRef = useRef(null);
 
   const [autoEnabled, setAutoEnabled] = useState(() => {
     try { return localStorage.getItem("soso_live_auto_enabled_binance") === "true"; } catch { return false; }
@@ -136,6 +111,7 @@ export default function LiveTrading() {
   useEffect(() => {
     try { localStorage.setItem("soso_live_auto_enabled_binance", String(autoEnabled)); } catch {}
   }, [autoEnabled]);
+  useEffect(() => { credsRef.current = creds; }, [creds]);
 
   useEffect(() => { base44.auth.me().then(setUser).catch(() => {}); }, []);
 
@@ -157,46 +133,48 @@ export default function LiveTrading() {
 
   useEffect(() => {
     if (!activeKey?.id) return;
-    // Check hedge mode
-    binanceRequest(activeKey.id, 'getPositionSideDual', {})
-      .then(data => {
-        const hm = data?.dualSidePosition === true;
+    // Decriptăm credențialele o dată, apoi le folosim din browser
+    base44.functions.invoke('decryptApiSecret', { keyId: activeKey.id })
+      .then(res => {
+        const c = { apiKey: res.data?.key || activeKey.api_key, apiSecret: res.data?.secret };
+        setCreds(c);
+        credsRef.current = c;
+        // Check hedge mode direct din browser
+        return getHedgeMode(c.apiKey, c.apiSecret);
+      })
+      .then(hm => {
         setHedgeMode(hm);
         hedgeModeRef.current = hm;
-        addLog(`ℹ️ Conectat la Binance Futures · Hedge Mode: ${hm ? "ON" : "OFF"}`);
+        addLog(`ℹ️ Conectat Binance Futures · Hedge Mode: ${hm ? "ON" : "OFF"}`);
       })
       .catch(() => {
-        addLog(`ℹ️ Conectat la Binance Futures`);
+        // Dacă decryptApiSecret nu returnează apiKey, folosim direct api_key din record
+        const c = { apiKey: activeKey.api_key, apiSecret: activeKey.api_secret };
+        setCreds(c);
+        credsRef.current = c;
+        addLog(`ℹ️ Conectat Binance Futures`);
       });
   }, [activeKey?.id]);
 
   const addLog = (msg) => setBotLog(prev => [`[${new Date().toLocaleTimeString("ro-RO")}] ${msg}`, ...prev.slice(0, 49)]);
 
   const fetchBalance = useCallback(async () => {
-    if (!activeKey?.id) return;
+    if (!credsRef.current?.apiSecret) return;
     setLoadingBalance(true);
     try {
-      const data = await binanceRequest(activeKey.id, 'getBalance', {});
-      const usdt = Array.isArray(data) ? data.find(b => b.asset === 'USDT') : null;
-      if (usdt) {
-        setBalance({
-          availableBalance: parseFloat(usdt.availableBalance || 0),
-          totalWallet: parseFloat(usdt.balance || 0),
-          asset: 'USDT'
-        });
-      }
+      const bal = await getFuturesBalance(credsRef.current.apiKey, credsRef.current.apiSecret);
+      if (bal) setBalance(bal);
     } catch (e) { addLog(`❌ Balanță: ${e.message}`); }
     setLoadingBalance(false);
-  }, [activeKey]);
+  }, []);
 
   const fetchPositions = useCallback(async () => {
-    if (!activeKey?.id) return;
+    if (!credsRef.current?.apiSecret) return;
     try {
-      const data = await binanceRequest(activeKey.id, 'getPositionRisk', {});
-      const open = Array.isArray(data) ? data.filter(p => parseFloat(p.positionAmt) !== 0) : [];
+      const open = await getFuturesPositions(credsRef.current.apiKey, credsRef.current.apiSecret);
       setPositions(open);
     } catch (e) { console.error("Positions error:", e.message); }
-  }, [activeKey]);
+  }, []);
 
   useEffect(() => {
     if (!activeKey) return;
@@ -216,13 +194,19 @@ export default function LiveTrading() {
 
     const cfg = autoConfigRef.current;
     const hm = hedgeModeRef.current;
-    const keyId = activeKey.id;
+    const c = credsRef.current;
     const isPerpetual = cfg.marketSource !== "spot";
+
+    if (!c?.apiSecret) {
+      addLog("⚠️ Bot: credențiale indisponibile");
+      botRunningRef.current = false;
+      setBotRunning(false);
+      return;
+    }
 
     let livePositions = [];
     try {
-      const data = await binanceRequest(keyId, 'getPositionRisk', {});
-      livePositions = Array.isArray(data) ? data.filter(p => parseFloat(p.positionAmt) !== 0) : [];
+      livePositions = await getFuturesPositions(c.apiKey, c.apiSecret);
       setPositions(livePositions);
     } catch (e) {
       addLog(`❌ Poziții: ${e.message}`);
@@ -239,8 +223,8 @@ export default function LiveTrading() {
           const analysis = analyzePump(kl);
           if (analysis.totalScore < 20) {
             try {
-              await cancelAllBinanceOrders(keyId, pos.symbol);
-              await closeBinancePosition(keyId, pos.symbol, pos.positionAmt, hm);
+              await cancelBrowserOrders(c.apiKey, c.apiSecret, pos.symbol).catch(() => {});
+              await closeBrowserPosition(c.apiKey, c.apiSecret, pos.symbol, pos.positionAmt, hm);
               cooldownMap.current[pos.symbol] = Date.now() + (cfg.cooldownMinutes || 60) * 60000;
               const pnl = parseFloat(pos.unRealizedProfit || 0);
               addLog(`❌ EXIT ${pos.symbol} | Score scăzut (${analysis.totalScore}) | P&L: ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}$`);
@@ -249,10 +233,8 @@ export default function LiveTrading() {
         }
       }
 
-      // Refresh after exits
       try {
-        const data = await binanceRequest(keyId, 'getPositionRisk', {});
-        livePositions = Array.isArray(data) ? data.filter(p => parseFloat(p.positionAmt) !== 0) : [];
+        livePositions = await getFuturesPositions(c.apiKey, c.apiSecret);
         setPositions(livePositions);
       } catch {}
     }
@@ -317,7 +299,7 @@ export default function LiveTrading() {
           const takeProfit = cfg.autoTP ? parseFloat((price * (1 + cfg.takeProfitPct / 100)).toFixed(pricePrecision)) : 0;
 
           try {
-            const ord = await placeBinanceOrderWithSlTp(keyId, pair.symbol, "BUY", quantity, stopLoss, takeProfit, hm);
+            const ord = await placeBrowserOrder(c.apiKey, c.apiSecret, { symbol: pair.symbol, side: "BUY", quantity, stopLoss, takeProfit, hedgeMode: hm });
             openSymbols.add(pair.symbol);
             opened++;
             const slStatus = ord?.slOrder ? `SL ✓` : ord?.slError ? `SL ✗(${ord.slError})` : "SL —";
@@ -360,21 +342,20 @@ export default function LiveTrading() {
     return () => clearTimeout(autoIntervalRef.current);
   }, [autoEnabled, activeKey]);
 
-  // Manual order
+  // Manual order - direct din browser
   const placeOrderMutation = useMutation({
     mutationFn: async () => {
-      if (!activeKey?.id) throw new Error("Lipsă cheie API");
+      if (!creds?.apiSecret) throw new Error("Lipsă credențiale API");
       setPlacingOrder(true);
       try {
-        await placeBinanceOrderWithSlTp(
-          activeKey.id,
-          orderParams.symbol,
-          orderParams.side,
-          orderParams.quantity,
-          orderParams.stopLoss,
-          orderParams.takeProfit,
+        await placeBrowserOrder(creds.apiKey, creds.apiSecret, {
+          symbol: orderParams.symbol,
+          side: orderParams.side,
+          quantity: orderParams.quantity,
+          stopLoss: orderParams.stopLoss,
+          takeProfit: orderParams.takeProfit,
           hedgeMode
-        );
+        });
         addLog(`✅ Ordine MARKET plasată: ${orderParams.symbol} ${orderParams.side} qty:${orderParams.quantity}${orderParams.stopLoss > 0 ? ` SL:${orderParams.stopLoss}` : ""}${orderParams.takeProfit > 0 ? ` TP:${orderParams.takeProfit}` : ""}`);
         setOrderDialog(false);
         setTimeout(fetchPositions, 1500);
@@ -388,10 +369,10 @@ export default function LiveTrading() {
   });
 
   const handleClosePosition = async (pos) => {
-    if (!activeKey?.id) return;
+    if (!creds?.apiSecret) return;
     try {
-      await cancelAllBinanceOrders(activeKey.id, pos.symbol);
-      await closeBinancePosition(activeKey.id, pos.symbol, pos.positionAmt, hedgeMode);
+      await cancelBrowserOrders(creds.apiKey, creds.apiSecret, pos.symbol).catch(() => {});
+      await closeBrowserPosition(creds.apiKey, creds.apiSecret, pos.symbol, pos.positionAmt, hedgeMode);
       addLog(`🔴 Închis manual: ${pos.symbol}`);
       setTimeout(fetchPositions, 1500);
     } catch (e) { addLog(`⚠️ Eroare închidere ${pos.symbol}: ${e.message}`); }

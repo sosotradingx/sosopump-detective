@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Key, Plus, Trash2, CheckCircle, AlertCircle, Loader2, Eye, EyeOff, ShieldAlert } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
 import PlanGate from "@/components/PlanGate";
+import { testBinanceConnection } from "@/lib/binanceClient";
 
 
 export default function ApiSettings() {
@@ -45,18 +46,18 @@ export default function ApiSettings() {
   const testConnection = async (keyRecord) => {
     setTesting(keyRecord.id);
     try {
-      const result = await base44.functions.invoke("testBinanceKey", { keyId: keyRecord.id });
-      
+      // Test direct din browser (IP-ul utilizatorului) - evită restricțiile geo
+      await testBinanceConnection(keyRecord.api_key, keyRecord.api_secret, keyRecord.market_type || 'futures');
       await base44.entities.UserApiKey.update(keyRecord.id, {
         test_status: "ok",
-        test_message: result.data?.message || "Conexiune reușită ✓",
+        test_message: "Conexiune reușită ✓ (direct din browser)",
         last_tested_at: new Date().toISOString(),
       });
       queryClient.invalidateQueries({ queryKey: ["userApiKeys"] });
     } catch (e) {
       await base44.entities.UserApiKey.update(keyRecord.id, {
         test_status: "error",
-        test_message: e.response?.data?.message || e.message,
+        test_message: e.message,
         last_tested_at: new Date().toISOString(),
       });
       queryClient.invalidateQueries({ queryKey: ["userApiKeys"] });
