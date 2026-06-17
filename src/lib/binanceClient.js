@@ -67,55 +67,13 @@ export async function getHedgeMode(apiKey, apiSecret) {
   return data?.dualSidePosition === true;
 }
 
-// Place order with optional SL + TP
-export async function placeOrderWithSlTp(apiKey, apiSecret, { symbol, side, quantity, stopLoss, takeProfit, hedgeMode }) {
-  const closeSide = side === 'BUY' ? 'SELL' : 'BUY';
+// Place MARKET order only (SL/TP handled via backend to avoid CORS on Algo endpoints)
+export async function placeMarketOrder(apiKey, apiSecret, { symbol, side, quantity, hedgeMode }) {
   const positionSide = side === 'BUY' ? 'LONG' : 'SHORT';
-  const closePosParams = hedgeMode
-    ? { positionSide: positionSide === 'LONG' ? 'SHORT' : 'LONG', quantity: quantity.toString() }
-    : { reduceOnly: 'true', quantity: quantity.toString() };
   const baseParams = hedgeMode ? { positionSide } : {};
-
-  // 1. Main MARKET order
-  const mainData = await signedRequest(apiKey, apiSecret, FAPI, 'POST', '/fapi/v1/order', {
+  return signedRequest(apiKey, apiSecret, FAPI, 'POST', '/fapi/v1/order', {
     symbol, side, type: 'MARKET', quantity: quantity.toString(), ...baseParams
   });
-
-  const results = { mainOrder: mainData, slOrder: null, tpOrder: null, slError: null, tpError: null };
-
-  // 2. Stop Loss
-  if (stopLoss > 0) {
-    try {
-      const slParams = {
-        symbol, side: closeSide, type: 'STOP_MARKET',
-        stopPrice: stopLoss.toString(),
-        quantity: quantity.toString(),
-        timeInForce: 'GTC',
-        workingType: 'MARK_PRICE',
-      };
-      if (hedgeMode) slParams.positionSide = positionSide;
-      else slParams.reduceOnly = 'true';
-      results.slOrder = await signedRequest(apiKey, apiSecret, FAPI, 'POST', '/fapi/v1/order', slParams);
-    } catch (e) { results.slError = e.message; }
-  }
-
-  // 3. Take Profit
-  if (takeProfit > 0) {
-    try {
-      const tpParams = {
-        symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET',
-        stopPrice: takeProfit.toString(),
-        quantity: quantity.toString(),
-        timeInForce: 'GTC',
-        workingType: 'MARK_PRICE',
-      };
-      if (hedgeMode) tpParams.positionSide = positionSide;
-      else tpParams.reduceOnly = 'true';
-      results.tpOrder = await signedRequest(apiKey, apiSecret, FAPI, 'POST', '/fapi/v1/order', tpParams);
-    } catch (e) { results.tpError = e.message; }
-  }
-
-  return results;
 }
 
 // Close position (market order reduceOnly)

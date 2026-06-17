@@ -18,7 +18,7 @@ import {
   getFuturesBalance,
   getFuturesPositions,
   getHedgeMode,
-  placeOrderWithSlTp as placeBrowserOrder,
+  placeMarketOrder,
   closePosition as closeBrowserPosition,
   cancelAllOrders as cancelBrowserOrders
 } from "@/lib/binanceClient";
@@ -299,12 +299,25 @@ export default function LiveTrading() {
           const takeProfit = cfg.autoTP ? parseFloat((price * (1 + cfg.takeProfitPct / 100)).toFixed(pricePrecision)) : 0;
 
           try {
-            const ord = await placeBrowserOrder(c.apiKey, c.apiSecret, { symbol: pair.symbol, side: "BUY", quantity, stopLoss, takeProfit, hedgeMode: hm });
+            // Place main MARKET order from browser (no CORS issues)
+            await placeMarketOrder(c.apiKey, c.apiSecret, { symbol: pair.symbol, side: "BUY", quantity, hedgeMode: hm });
             openSymbols.add(pair.symbol);
             opened++;
-            const slStatus = ord?.slOrder ? `SL ✓` : ord?.slError ? `SL ✗(${ord.slError})` : "SL —";
-            const tpStatus = ord?.tpOrder ? `TP ✓` : ord?.tpError ? `TP ✗(${ord.tpError})` : "TP —";
-            addLog(`✅ CUMPĂRAT ${pair.symbol} | Score: ${analysis.totalScore} | Qty: ${quantity} | ${slStatus} | ${tpStatus}`);
+            addLog(`✅ CUMPĂRAT ${pair.symbol} | Score: ${analysis.totalScore} | Qty: ${quantity}`);
+
+            // Place SL/TP via backend (supports Algo API endpoints, no CORS)
+            if ((cfg.autoSL && stopLoss > 0) || (cfg.autoTP && takeProfit > 0)) {
+              base44.functions.invoke('placeSlTpOrders', {
+                keyId: activeKey.id, symbol: pair.symbol, side: "BUY",
+                quantity, stopLoss: cfg.autoSL ? stopLoss : 0,
+                takeProfit: cfg.autoTP ? takeProfit : 0, hedgeMode: hm
+              }).then(res => {
+                const r = res.data || {};
+                const slStatus = r.slOrder ? `SL ✓` : r.slError ? `SL ✗(${r.slError})` : "SL —";
+                const tpStatus = r.tpOrder ? `TP ✓` : r.tpError ? `TP ✗(${r.tpError})` : "TP —";
+                addLog(`   └ ${pair.symbol} | ${slStatus} | ${tpStatus}`);
+              }).catch(e => addLog(`   └ ${pair.symbol} SL/TP eroare: ${e.message}`));
+            }
           } catch (e) {
             addLog(`⚠️ Eroare ordine ${pair.symbol}: ${e.message}`);
           }
@@ -348,17 +361,33 @@ export default function LiveTrading() {
       if (!creds?.apiSecret) throw new Error("Lipsă credențiale API");
       setPlacingOrder(true);
       try {
-        await placeBrowserOrder(creds.apiKey, creds.apiSecret, {
+        // Main MARKET order from browser
+        await placeMarketOrder(creds.apiKey, creds.apiSecret, {
           symbol: orderParams.symbol,
           side: orderParams.side,
           quantity: orderParams.quantity,
-          stopLoss: orderParams.stopLoss,
-          takeProfit: orderParams.takeProfit,
           hedgeMode
         });
-        addLog(`✅ Ordine MARKET plasată: ${orderParams.symbol} ${orderParams.side} qty:${orderParams.quantity}${orderParams.stopLoss > 0 ? ` SL:${orderParams.stopLoss}` : ""}${orderParams.takeProfit > 0 ? ` TP:${orderParams.takeProfit}` : ""}`);
+        addLog(`✅ Ordine MARKET plasată: ${orderParams.symbol} ${orderParams.side} qty:${orderParams.quantity}`);
         setOrderDialog(false);
         setTimeout(fetchPositions, 1500);
+
+        // SL/TP via backend
+        if (orderParams.stopLoss > 0 || orderParams.takeProfit > 0) {
+          base44.functions.invoke('placeSlTpOrders', {
+            keyId: activeKey.id,
+            symbol: orderParams.symbol, side: orderParams.side,
+            quantity: orderParams.quantity,
+            stopLoss: orderParams.stopLoss,
+            takeProfit: orderParams.takeProfit,
+            hedgeMode
+          }).then(res => {
+            const r = res.data || {};
+            const slStatus = r.slOrder ? `SL ✓` : r.slError ? `SL ✗(${r.slError})` : "";
+            const tpStatus = r.tpOrder ? `TP ✓` : r.tpError ? `TP ✗(${r.tpError})` : "";
+            addLog(`   └ ${orderParams.symbol} | ${slStatus} | ${tpStatus}`);
+          }).catch(() => {});
+        }
       } catch (e) {
         addLog(`❌ Eroare ordine: ${e.message}`);
         throw e;
