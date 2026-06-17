@@ -86,18 +86,18 @@ export async function placeOrderWithSlTp(apiKey, apiSecret, { symbol, side, quan
   // 2. Stop Loss
   if (stopLoss > 0) {
     try {
-      results.slOrder = await signedRequest(apiKey, apiSecret, FAPI, 'POST', '/fapi/v1/order', {
-        symbol, side: closeSide, type: 'STOP_MARKET', stopPrice: stopLoss.toString(), ...closePosParams
-      });
+      const slParams = { symbol, side: closeSide, type: 'STOP_MARKET', stopPrice: stopLoss.toString(), closePosition: 'true' };
+      if (hedgeMode) { delete slParams.closePosition; slParams.positionSide = positionSide; slParams.quantity = quantity.toString(); }
+      results.slOrder = await signedRequest(apiKey, apiSecret, FAPI, 'POST', '/fapi/v1/order', slParams);
     } catch (e) { results.slError = e.message; }
   }
 
   // 3. Take Profit
   if (takeProfit > 0) {
     try {
-      results.tpOrder = await signedRequest(apiKey, apiSecret, FAPI, 'POST', '/fapi/v1/order', {
-        symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET', stopPrice: takeProfit.toString(), ...closePosParams
-      });
+      const tpParams = { symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET', stopPrice: takeProfit.toString(), closePosition: 'true' };
+      if (hedgeMode) { delete tpParams.closePosition; tpParams.positionSide = positionSide; tpParams.quantity = quantity.toString(); }
+      results.tpOrder = await signedRequest(apiKey, apiSecret, FAPI, 'POST', '/fapi/v1/order', tpParams);
     } catch (e) { results.tpError = e.message; }
   }
 
