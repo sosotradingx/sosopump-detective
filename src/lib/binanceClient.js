@@ -83,36 +83,36 @@ export async function placeOrderWithSlTp(apiKey, apiSecret, { symbol, side, quan
 
   const results = { mainOrder: mainData, slOrder: null, tpOrder: null, slError: null, tpError: null };
 
-  // 2. Stop Loss - try standard endpoint first, fallback to Algo API
+  // 2. Stop Loss
   if (stopLoss > 0) {
     try {
-      const slParams = { symbol, side: closeSide, type: 'STOP_MARKET', stopPrice: stopLoss.toString(), closePosition: 'true' };
-      if (hedgeMode) { delete slParams.closePosition; slParams.positionSide = positionSide; slParams.quantity = quantity.toString(); }
+      const slParams = {
+        symbol, side: closeSide, type: 'STOP_MARKET',
+        stopPrice: stopLoss.toString(),
+        quantity: quantity.toString(),
+        timeInForce: 'GTC',
+        workingType: 'MARK_PRICE',
+      };
+      if (hedgeMode) slParams.positionSide = positionSide;
+      else slParams.reduceOnly = 'true';
       results.slOrder = await signedRequest(apiKey, apiSecret, FAPI, 'POST', '/fapi/v1/order', slParams);
-    } catch (e1) {
-      // Fallback: Algo Order API (for USDC-M futures)
-      try {
-        const algoSlParams = { symbol, side: closeSide, orderType: 'STP', stopPrice: stopLoss.toString(), quantity: quantity.toString() };
-        if (hedgeMode) algoSlParams.positionSide = positionSide;
-        results.slOrder = await signedRequest(apiKey, apiSecret, FAPI, 'POST', '/fapi/v1/order/algo', algoSlParams);
-      } catch (e2) { results.slError = e2.message; }
-    }
+    } catch (e) { results.slError = e.message; }
   }
 
-  // 3. Take Profit - try standard endpoint first, fallback to Algo API
+  // 3. Take Profit
   if (takeProfit > 0) {
     try {
-      const tpParams = { symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET', stopPrice: takeProfit.toString(), closePosition: 'true' };
-      if (hedgeMode) { delete tpParams.closePosition; tpParams.positionSide = positionSide; tpParams.quantity = quantity.toString(); }
+      const tpParams = {
+        symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET',
+        stopPrice: takeProfit.toString(),
+        quantity: quantity.toString(),
+        timeInForce: 'GTC',
+        workingType: 'MARK_PRICE',
+      };
+      if (hedgeMode) tpParams.positionSide = positionSide;
+      else tpParams.reduceOnly = 'true';
       results.tpOrder = await signedRequest(apiKey, apiSecret, FAPI, 'POST', '/fapi/v1/order', tpParams);
-    } catch (e1) {
-      // Fallback: Algo Order API (for USDC-M futures)
-      try {
-        const algoTpParams = { symbol, side: closeSide, orderType: 'TTP', stopPrice: takeProfit.toString(), quantity: quantity.toString() };
-        if (hedgeMode) algoTpParams.positionSide = positionSide;
-        results.tpOrder = await signedRequest(apiKey, apiSecret, FAPI, 'POST', '/fapi/v1/order/algo', algoTpParams);
-      } catch (e2) { results.tpError = e2.message; }
-    }
+    } catch (e) { results.tpError = e.message; }
   }
 
   return results;
