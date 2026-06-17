@@ -462,7 +462,7 @@ export default function LiveTrading() {
             {balance ? (
               <div className="space-y-1">
                 <p className="text-2xl font-bold font-mono">${balance.availableBalance.toFixed(2)}</p>
-                <p className="text-xs text-muted-foreground">disponibil USDT · Total: ${balance.totalWallet?.toFixed(2)}</p>
+                <p className="text-xs text-muted-foreground">disponibil {balance.asset} · Total: ${balance.totalWallet?.toFixed(2)}</p>
               </div>
             ) : (
               <p className="text-muted-foreground text-sm">{activeKey ? "Se încarcă..." : "—"}</p>

@@ -41,14 +41,17 @@ export async function testBinanceConnection(apiKey, apiSecret, marketType = 'fut
   }
 }
 
-// Get futures balance
+// Get futures balance (USDC preferred, fallback USDT)
 export async function getFuturesBalance(apiKey, apiSecret) {
   const data = await signedRequest(apiKey, apiSecret, FAPI, 'GET', '/fapi/v2/balance', {});
-  const usdt = Array.isArray(data) ? data.find(b => b.asset === 'USDT') : null;
-  return usdt ? {
-    availableBalance: parseFloat(usdt.availableBalance || 0),
-    totalWallet: parseFloat(usdt.balance || 0),
-    asset: 'USDT'
+  if (!Array.isArray(data)) return null;
+  const usdc = data.find(b => b.asset === 'USDC');
+  const usdt = data.find(b => b.asset === 'USDT');
+  const bal = usdc || usdt;
+  return bal ? {
+    availableBalance: parseFloat(bal.availableBalance || 0),
+    totalWallet: parseFloat(bal.balance || 0),
+    asset: bal.asset
   } : null;
 }
 
