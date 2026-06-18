@@ -12,6 +12,7 @@ import ApiSettings from './pages/ApiSettings.jsx';
 import Pricing from './pages/Pricing.jsx';
 import AdminSubscriptions from './pages/AdminSubscriptions.jsx';
 import AlertSettings from './pages/AlertSettings.jsx';
+import Landing from './pages/Landing.jsx';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 
@@ -49,11 +50,7 @@ const AuthenticatedApp = () => {
   // Render the main app
   return (
     <Routes>
-      <Route path="/" element={
-        <LayoutWrapper currentPageName={mainPageKey}>
-          <MainPage />
-        </LayoutWrapper>
-      } />
+      <Route path="/" element={<Landing />} />
       {Object.entries(Pages).map(([path, Page]) => (
         <Route
           key={path}
@@ -73,6 +70,8 @@ const AuthenticatedApp = () => {
       <Route path="/Pricing" element={<LayoutWrapper currentPageName="Pricing"><Pricing /></LayoutWrapper>} />
       <Route path="/AdminSubscriptions" element={<LayoutWrapper currentPageName="AdminSubscriptions"><AdminSubscriptions /></LayoutWrapper>} />
       <Route path="/AlertSettings" element={<LayoutWrapper currentPageName="AlertSettings"><AlertSettings /></LayoutWrapper>} />
+      <Route path="/landing" element={<Landing />} />
+      <Route path="/Dashboard" element={<LayoutWrapper currentPageName="Dashboard"><MainPage /></LayoutWrapper>} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );
