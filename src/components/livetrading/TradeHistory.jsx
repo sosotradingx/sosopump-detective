@@ -29,8 +29,8 @@ export default function TradeHistory({ creds, positions }) {
     fetchHistory();
   }, [fetchHistory]);
 
-  const symbols = ["ALL", ...new Set(history.map(t => t.asset || t.symbol).filter(Boolean))];
-  const filtered = filterSymbol === "ALL" ? history : history.filter(t => (t.asset || t.symbol) === filterSymbol);
+  const symbols = ["ALL", ...new Set(history.map(t => t.symbol || t.asset).filter(Boolean))];
+  const filtered = filterSymbol === "ALL" ? history : history.filter(t => (t.symbol || t.asset) === filterSymbol);
 
   const totalPnl = filtered.reduce((sum, t) => sum + parseFloat(t.income || t.realizedPnl || 0), 0);
 
@@ -93,7 +93,12 @@ export default function TradeHistory({ creds, positions }) {
                       <td className="p-3 font-mono text-muted-foreground whitespace-nowrap">
                         {date.toLocaleDateString("ro-RO")} {date.toLocaleTimeString("ro-RO", { hour: "2-digit", minute: "2-digit" })}
                       </td>
-                      <td className="p-3 font-mono font-semibold">{t.asset || t.symbol || "—"}</td>
+                      <td className="p-3 font-mono font-semibold">
+                        <div>{t.symbol || "—"}</div>
+                        {t.asset && t.asset !== t.symbol && (
+                          <div className="text-[10px] text-muted-foreground">{t.asset}</div>
+                        )}
+                      </td>
                       <td className={`p-3 text-right font-mono font-bold ${pnl >= 0 ? "text-chart-green" : "text-chart-red"}`}>
                         <span className="flex items-center justify-end gap-1">
                           {pnl >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
