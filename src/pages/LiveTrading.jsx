@@ -22,6 +22,7 @@ import {
   closePosition as closeBrowserPosition,
   cancelAllOrders as cancelBrowserOrders
 } from "@/lib/binanceClient";
+import TradeHistory from "@/components/livetrading/TradeHistory";
 
 // --- Helpers ---
 const stepSizeCache = {};
@@ -490,8 +491,25 @@ export default function LiveTrading() {
             </div>
             {balance ? (
               <div className="space-y-1">
-                <p className="text-2xl font-bold font-mono">${balance.availableBalance.toFixed(2)}</p>
-                <p className="text-xs text-muted-foreground">disponibil {balance.asset} · Total: ${balance.totalWallet?.toFixed(2)}</p>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-2xl font-bold font-mono">${balance.availableBalance.toFixed(2)}</p>
+                  <span className="text-xs font-mono text-primary">{balance.asset}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">Total: ${balance.totalWallet?.toFixed(2)} {balance.asset}</p>
+                {balance.unrealizedPnl !== 0 && (
+                  <p className={`text-xs font-mono ${balance.unrealizedPnl >= 0 ? "text-chart-green" : "text-chart-red"}`}>
+                    PnL nerealizat: {balance.unrealizedPnl >= 0 ? "+" : ""}{balance.unrealizedPnl.toFixed(2)} {balance.asset}
+                  </p>
+                )}
+                {balance.allAssets?.length > 1 && (
+                  <div className="mt-2 pt-2 border-t border-border space-y-1">
+                    {balance.allAssets.filter(a => a.asset !== balance.asset).map(a => (
+                      <p key={a.asset} className="text-[10px] text-muted-foreground font-mono">
+                        {a.asset}: {a.balance.toFixed(4)}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <p className="text-muted-foreground text-sm">{activeKey ? "Se încarcă..." : "—"}</p>
@@ -641,6 +659,9 @@ export default function LiveTrading() {
           </div>
         </div>
       </div>
+
+      {/* Trade History */}
+      <TradeHistory creds={creds} positions={positions} />
 
       {/* Auto Settings Panel */}
       {showAutoSettings && (

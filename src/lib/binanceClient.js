@@ -41,18 +41,43 @@ export async function testBinanceConnection(apiKey, apiSecret, marketType = 'fut
   }
 }
 
-// Get futures balance (USDC preferred, fallback USDT)
+// Get futures balance - returns primary asset (highest balance among USDC/USDT/BNB)
 export async function getFuturesBalance(apiKey, apiSecret) {
   const data = await signedRequest(apiKey, apiSecret, FAPI, 'GET', '/fapi/v2/balance', {});
   if (!Array.isArray(data)) return null;
-  const usdc = data.find(b => b.asset === 'USDC');
-  const usdt = data.find(b => b.asset === 'USDT');
-  const bal = usdc || usdt;
-  return bal ? {
-    availableBalance: parseFloat(bal.availableBalance || 0),
-    totalWallet: parseFloat(bal.balance || 0),
-    asset: bal.asset
-  } : null;
+
+  // All assets with balance > 0
+  const withBalance = data.filter(b => parseFloat(b.balance || 0) > 0);
+
+  // Prefer USDC, then USDT, then highest balance asset
+  const usdc = withBalance.find(b => b.asset === 'USDC');
+  const usdt = withBalance.find(b => b.asset === 'USDT');
+  const primary = usdc || usdt || withBalance.sort((a, b) => parseFloat(b.balance) - parseFloat(a.balance))[0];
+
+  if (!primary) return null;
+  return {
+    availableBalance: parseFloat(primary.availableBalance || 0),
+    totalWallet: parseFloat(primary.balance || 0),
+    unrealizedPnl: parseFloat(primary.crossUnPnl || 0),
+    asset: primary.asset,
+    allAssets: withBalance.map(b => ({
+      asset: b.asset,
+      balance: parseFloat(b.balance || 0),
+      available: parseFloat(b.availableBalance || 0),
+    })),
+  };
+}
+
+// Get futures trade history for a symbol or all recent trades
+export async function getFuturesTradeHistory(apiKey, apiSecret, symbol = null, limit = 50) {
+  if (symbol) {
+    return signedRequest(apiKey, apiSecret, FAPI, 'GET', '/fapi/v1/userTrades', { symbol, limit: limit.toString() });
+  }
+  // No symbol = get income history (realized PnL)
+  return signedRequest(apiKey, apiSecret, FAPI, 'GET', '/fapi/v1/income', {
+    incomeType: 'REALIZED_PNL',
+    limit: limit.toString()
+  });
 }
 
 // Get open positions
