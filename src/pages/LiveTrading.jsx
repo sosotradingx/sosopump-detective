@@ -105,9 +105,11 @@ export default function LiveTrading() {
   const autoIntervalRef = useRef(null);
   const cooldownMap = useRef({});
   const hedgeModeRef = useRef(false);
+  const autoEnabledRef = useRef(autoEnabled);
 
   useEffect(() => { autoConfigRef.current = autoConfig; }, [autoConfig]);
   useEffect(() => { hedgeModeRef.current = hedgeMode; }, [hedgeMode]);
+  useEffect(() => { autoEnabledRef.current = autoEnabled; }, [autoEnabled]);
   useEffect(() => { saveAutoConfig(autoConfig); }, [autoConfig]);
   useEffect(() => {
     try { localStorage.setItem("soso_live_auto_enabled_binance", String(autoEnabled)); } catch {}
@@ -177,13 +179,14 @@ export default function LiveTrading() {
     } catch (e) { console.error("Positions error:", e.message); }
   }, []);
 
+  // Fetch balance & positions when creds become available (after decrypt)
   useEffect(() => {
-    if (!activeKey) return;
+    if (!creds?.apiSecret) return;
     fetchBalance();
     fetchPositions();
     const interval = setInterval(() => { fetchBalance(); fetchPositions(); }, 15000);
     return () => clearInterval(interval);
-  }, [activeKey, fetchBalance, fetchPositions]);
+  }, [creds, fetchBalance, fetchPositions]);
 
   // --- Auto-bot ---
   const runAutoBot = useCallback(async () => {
@@ -265,8 +268,10 @@ export default function LiveTrading() {
     const BATCH = 20;
 
     outer: for (let bi = 0; bi < candidates.length; bi += BATCH) {
+      if (!autoEnabledRef.current) break outer; // stop scan if disabled
       const chunk = candidates.slice(bi, bi + BATCH);
       for (const pair of chunk) {
+        if (!autoEnabledRef.current) break outer; // stop scan if disabled
         if (livePositions.length + opened >= cfg.maxOpenTrades) break outer;
 
         const kl = await fetchKlines(pair.symbol, cfg.timeframe, 80, isPerpetual).catch(() => []);
@@ -346,14 +351,27 @@ export default function LiveTrading() {
   useEffect(() => { runAutoBotRef.current = runAutoBot; }, [runAutoBot]);
 
   useEffect(() => {
-    if (!autoEnabled || !activeKey) { clearTimeout(autoIntervalRef.current); return; }
+    if (!autoEnabled || !activeKey) {
+      clearTimeout(autoIntervalRef.current);
+      autoIntervalRef.current = null;
+      botRunningRef.current = false;
+      setBotRunning(false);
+      return;
+    }
     runAutoBotRef.current();
     const scheduleNext = () => {
       const ms = tfToMs(autoConfigRef.current.timeframe);
-      autoIntervalRef.current = setTimeout(() => { runAutoBotRef.current(); scheduleNext(); }, ms);
+      autoIntervalRef.current = setTimeout(() => {
+        if (!autoEnabledRef.current) return; // stop if disabled
+        runAutoBotRef.current();
+        scheduleNext();
+      }, ms);
     };
     scheduleNext();
-    return () => clearTimeout(autoIntervalRef.current);
+    return () => {
+      clearTimeout(autoIntervalRef.current);
+      autoIntervalRef.current = null;
+    };
   }, [autoEnabled, activeKey]);
 
   // Manual order - direct din browser
