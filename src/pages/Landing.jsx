@@ -124,7 +124,7 @@ export default function Landing() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState(null);
 
-  const handleLogin = () => base44.auth.redirectToLogin(window.location.origin + "/Dashboard");
+  const handleLogin = () => { window.location.href = "/login"; };
 
   return (
     <div className="min-h-screen bg-background text-foreground">

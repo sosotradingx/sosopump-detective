@@ -13,6 +13,10 @@ import Pricing from './pages/Pricing.jsx';
 import AdminSubscriptions from './pages/AdminSubscriptions.jsx';
 import AlertSettings from './pages/AlertSettings.jsx';
 import Landing from './pages/Landing.jsx';
+import Login from './pages/Login.jsx';
+import Register from './pages/Register.jsx';
+import ForgotPassword from './pages/ForgotPassword.jsx';
+import ResetPassword from './pages/ResetPassword.jsx';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 
@@ -27,10 +31,11 @@ const LayoutWrapper = ({ children, currentPageName }) => Layout ?
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
 
-  // Allow landing page without auth
-  const isLandingPage = window.location.pathname === '/' || window.location.pathname === '/landing';
+  // Allow landing & auth pages without authentication
+  const publicPaths = ['/', '/landing', '/login', '/register', '/forgot-password', '/reset-password'];
+  const isLandingPage = publicPaths.includes(window.location.pathname);
 
-  // Show loading spinner while checking app public settings or auth (skip for landing)
+  // Show loading spinner while checking app public settings or auth (skip for public pages)
   if (!isLandingPage && (isLoadingPublicSettings || isLoadingAuth)) {
     return (
       <div className="fixed inset-0 flex items-center justify-center">
@@ -74,6 +79,10 @@ const AuthenticatedApp = () => {
       <Route path="/AdminSubscriptions" element={<LayoutWrapper currentPageName="AdminSubscriptions"><AdminSubscriptions /></LayoutWrapper>} />
       <Route path="/AlertSettings" element={<LayoutWrapper currentPageName="AlertSettings"><AlertSettings /></LayoutWrapper>} />
       <Route path="/landing" element={<Landing />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/Dashboard" element={<LayoutWrapper currentPageName="Dashboard"><MainPage /></LayoutWrapper>} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
