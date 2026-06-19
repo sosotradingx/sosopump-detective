@@ -14,13 +14,26 @@ export default function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const getRedirectTarget = () => {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get("from_url");
+    if (fromUrl) {
+      try {
+        return new URL(fromUrl).pathname || "/Dashboard";
+      } catch {
+        return fromUrl.startsWith("/") ? fromUrl : "/Dashboard";
+      }
+    }
+    return "/Dashboard";
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
       await base44.auth.loginViaEmailPassword(email, password);
-      window.location.href = "/Dashboard";
+      window.location.href = getRedirectTarget();
     } catch (err) {
       setError(err.message || "Invalid email or password");
     } finally {
@@ -29,7 +42,7 @@ export default function Login() {
   };
 
   const handleGoogle = () => {
-    base44.auth.loginWithProvider("google", "/Dashboard");
+    base44.auth.loginWithProvider("google", getRedirectTarget());
   };
 
   return (
