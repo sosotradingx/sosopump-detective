@@ -75,11 +75,19 @@ export default function PaperTrading() {
 
   useEffect(() => { base44.auth.me().then(setUser).catch(() => {}); }, []);
 
-  const { data: trades = [], isLoading } = useQuery({
-    queryKey: ["paper-trades", user?.email],
-    queryFn: () => base44.entities.PaperTrade.filter({ created_by: user.email }, "-created_date", 100),
+  const { data: openTrades = [], isLoading } = useQuery({
+    queryKey: ["paper-trades", "open", user?.email],
+    queryFn: () => base44.entities.PaperTrade.filter({ created_by: user.email, status: "open" }, "-created_date", 200),
     enabled: !!user,
     refetchInterval: 15000, // re-fetch la 15s pentru a prinde închiderile din background
+  });
+
+  // Istoric complet de tranzacții închise (nu mai e plafonat la 100 total)
+  const { data: closedTrades = [] } = useQuery({
+    queryKey: ["paper-trades", "closed", user?.email],
+    queryFn: () => base44.entities.PaperTrade.filter({ created_by: user.email, status: "closed" }, "-created_date", 2000),
+    enabled: !!user,
+    refetchInterval: 30000,
   });
 
   // Real-time subscription - invalideaza query-ul cand backend-ul modifica tranzactii
@@ -109,8 +117,8 @@ export default function PaperTrading() {
     pairs.forEach(p => { priceMap[p.symbol] = p.price; });
 
     // Fetch prices for open trade symbols not in the top list
-    const openSymbols = trades
-      .filter(t => t.status === "open" && !priceMap[t.symbol])
+    const openSymbols = openTrades
+      .filter(t => !priceMap[t.symbol])
       .map(t => t.symbol);
 
     if (openSymbols.length > 0) {
@@ -125,7 +133,7 @@ export default function PaperTrading() {
 
     setPrices(priceMap);
     return pairs;
-  }, [trades]);
+  }, [openTrades]);
 
   useEffect(() => {
     loadPrices();
@@ -230,34 +238,16 @@ export default function PaperTrading() {
       }
 
       if (reason) {
-         const pnlUsd = (cur - trade.entry_price) * trade.quantity;
+        const pnlUsd = (cur - trade.entry_price) * trade.quantity;
 
-         // Create history record for final closure (TP2/SL)
-         await base44.entities.PaperTrade.create({
-           symbol: trade.symbol,
-           side: "BUY",
-           status: "closed",
-           entry_price: trade.entry_price,
-           exit_price: cur,
-           quantity: trade.quantity,
-           pump_score_at_entry: trade.pump_score_at_entry,
-           stop_loss: trade.stop_loss,
-           take_profit: trade.take_profit,
-           partial_tp_hit: trade.partial_tp_hit,
-           pnl_percent: Math.round(pnlPct * 100) / 100,
-           pnl_usd: Math.round(pnlUsd * 100) / 100,
-           exit_reason: reason,
-           notes: `${reason === "take_profit" ? "TP2" : reason === "stop_loss" ? "SL" : "Exit"} | ${trade.notes || ""}`,
-         });
-
-         // Also update original trade for consistency
-         await base44.entities.PaperTrade.update(trade.id, {
-           status: "closed",
-           exit_price: cur,
-           pnl_percent: Math.round(pnlPct * 100) / 100,
-           pnl_usd: Math.round(pnlUsd * 100) / 100,
-           exit_reason: reason,
-         });
+        // Update original trade to closed (fără record duplicat în istoric)
+        await base44.entities.PaperTrade.update(trade.id, {
+          status: "closed",
+          exit_price: cur,
+          pnl_percent: Math.round(pnlPct * 100) / 100,
+          pnl_usd: Math.round(pnlUsd * 100) / 100,
+          exit_reason: reason,
+        });
 
          const cooldownMs = (cfg.cooldownMinutes || 60) * 60 * 1000;
          cooldownMap.current[trade.symbol] = Date.now() + cooldownMs;
@@ -471,9 +461,6 @@ export default function PaperTrading() {
     const interval = setInterval(checkSlTp, 15000);
     return () => clearInterval(interval);
   }, [user, queryClient]);
-
-  const openTrades = trades.filter(t => t.status === "open");
-  const closedTrades = trades.filter(t => t.status === "closed");
 
   const handleOpenTrade = () => {
     const price = prices[newTrade.symbol] || 0;
