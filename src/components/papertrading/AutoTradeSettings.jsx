@@ -220,6 +220,36 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
             <ToggleRow label="Noise Filter" configKey="noiseFilter" description="Filtrează perechi cu ATR mic" />
           </section>
 
+          {/* VVF Confirmation Layer */}
+          <section className="space-y-1">
+            <h3 className="text-xs font-mono uppercase text-muted-foreground border-b border-border pb-1">🔍 sosoVVF Confirmation Layer</h3>
+            <ToggleRow
+              label="Folosește Confirmare VVF"
+              configKey="useVvfConfirmation"
+              description="Nu deschide poziții fără aprobare VVF (FVG, manipulare, lichiditate)"
+            />
+            {local.useVvfConfirmation && (
+              <>
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1 block">VVF Confidence Min ({local.vvfMinConfidence ?? 60}%)</Label>
+                    <Input type="number" min="30" max="90" step="5" value={local.vvfMinConfidence ?? 60}
+                      onChange={e => set("vvfMinConfidence", Number(e.target.value))} className="bg-secondary" />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1 block">VVF Unified Score Min ({local.vvfMinUnifiedScore ?? 25})</Label>
+                    <Input type="number" min="10" max="50" step="5" value={local.vvfMinUnifiedScore ?? 25}
+                      onChange={e => set("vvfMinUnifiedScore", Number(e.target.value))} className="bg-secondary" />
+                  </div>
+                </div>
+                <ToggleRow label="Necesită Bull FVG pentru BUY" configKey="vvfRequireBullFvg" description="Blochează dacă nu există Fair Value Gap bullish" />
+                <ToggleRow label="Blochează la Manipulation > 50%" configKey="vvfBlockManipulation" />
+                <ToggleRow label="Blochează la Liquidity Heat > 70%" configKey="vvfBlockLiquidityHeat" />
+                <ToggleRow label="Blochează la Vulnerability > 50%" configKey="vvfBlockVulnerability" />
+              </>
+            )}
+          </section>
+
           {/* Advanced thresholds */}
           <section className="space-y-3">
             <h3 className="text-xs font-mono uppercase text-muted-foreground border-b border-border pb-1">⚙️ Praguri Avansate</h3>

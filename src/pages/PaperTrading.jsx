@@ -3,6 +3,7 @@ import { base44 } from "@/api/base44Client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchTopPairs, fetchPerpetualPairs, fetchKlines, formatPrice, formatVolume } from "../components/scanner/binanceApi";
 import { analyzePump } from "../components/scanner/pumpEngine";
+import { analyzeVVF, getVVFApproval } from "../components/scanner/vvfEngine";
 import AutoTradeSettings from "../components/papertrading/AutoTradeSettings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,13 @@ const DEFAULT_AUTO_CONFIG = {
   partialTPTarget: 10,
   partialTPPercent: 50,
   moveSlToBreakeven: true,
+  useVvfConfirmation: true,
+  vvfMinConfidence: 60,
+  vvfMinUnifiedScore: 25,
+  vvfRequireBullFvg: true,
+  vvfBlockManipulation: true,
+  vvfBlockLiquidityHeat: true,
+  vvfBlockVulnerability: true,
 };
 
 function loadAutoConfig() {
@@ -328,6 +336,14 @@ export default function PaperTrading() {
       }
 
       if (analysis.totalScore >= cfg.minScore) {
+        // --- Strat de confirmare sosoVVF: blochează falsele semnale de pump ---
+        const vvf = analyzeVVF(kl);
+        const vvfApproval = getVVFApproval("BUY", vvf, cfg);
+        if (!vvfApproval.approved) {
+          log(`⛔ VVF BLOCKED ${pair.symbol} | ${vvfApproval.reason} | Pump Score: ${analysis.totalScore}`);
+          continue;
+        }
+
         if (runningBalance < cfg.tradeSize) {
           log(`🚫 Capital insuficient pentru ${pair.symbol}: $${runningBalance.toFixed(2)} disponibil`);
           break outer;
@@ -347,7 +363,7 @@ export default function PaperTrading() {
           stop_loss: stopLoss,
           take_profit: takeProfit,
           pump_score_at_entry: analysis.totalScore,
-          notes: `Auto | TF:${cfg.timeframe} | Score:${analysis.totalScore} | ${analysis.pumpStatus}`,
+          notes: `Auto | TF:${cfg.timeframe} | Score:${analysis.totalScore} | ${analysis.pumpStatus} | VVF:${vvfApproval.confidence}%`,
         });
         openSymbols.add(pair.symbol);
         runningBalance -= cfg.tradeSize; // scade balanța imediat
