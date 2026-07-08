@@ -467,6 +467,8 @@ export default function PaperTrading() {
           }
         }
         if (anyChanged) queryClient.invalidateQueries({ queryKey: ["paper-trades"] });
+      } catch (err) {
+        console.warn("SL/TP monitor skipped a cycle (network error):", err?.message || err);
       } finally {
         monitorRunning.current = false;
       }
