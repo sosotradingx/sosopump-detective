@@ -210,19 +210,18 @@ export default function Backtest() {
     const allTrades = [];
     const symbolResults = [];
 
-    for (let i = 0; i < pairs.length; i++) {
-      if (abortRef.current) break;
-      const pair = pairs[i];
-      setProgressLabel(`Analizez ${pair.symbol} (${i + 1}/${pairs.length})`);
-      setProgress(Math.round(((i + 1) / pairs.length) * 100));
+    // Procesare în paralel (loturi de câte 6 perechi simultan) pentru teste mult mai rapide
+    const CONCURRENCY = 6;
+    let completed = 0;
 
+    const processPair = async (pair) => {
       const klines = await fetchKlines(pair.symbol, cfg.timeframe, Math.min(totalBars, 1000), true);
-      if (klines.length < 60) continue;
+      if (klines.length < 60) return;
 
       const trades = runBacktest(klines, cfg);
-      if (trades.length === 0) continue;
+      if (trades.length === 0) return;
 
-        // Merge partial_tp + remainder into logical trades for per-symbol stats
+      // Merge partial_tp + remainder into logical trades for per-symbol stats
       const symLogical = [];
       const symUsed = new Set();
       for (let si = 0; si < trades.length; si++) {
@@ -255,8 +254,15 @@ export default function Backtest() {
         avgPnl: Math.round((symTotalPnl / symLogical.length) * 100) / 100,
       });
       allTrades.push(...trades.map(t => ({ ...t, symbol: pair.symbol })));
+    };
 
-      await new Promise(r => setTimeout(r, 80));
+    for (let i = 0; i < pairs.length; i += CONCURRENCY) {
+      if (abortRef.current) break;
+      const batch = pairs.slice(i, i + CONCURRENCY);
+      setProgressLabel(`Analizez ${batch.map(p => p.symbol).join(", ")}`);
+      await Promise.all(batch.map(p => processPair(p)));
+      completed += batch.length;
+      setProgress(Math.round((Math.min(completed, pairs.length) / pairs.length) * 100));
     }
 
     // Build equity curve — only on completed trades (partial_tp already folded into remainder)
@@ -485,6 +491,16 @@ export default function Backtest() {
               </Button>
             )}
           </div>
+          {!running && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full text-xs"
+              onClick={() => setCfg(prev => ({ ...prev, scanPairs: 10, timeframe: "1h" }))}
+            >
+              ⚡ Test Rapid (Top 10, 1h)
+            </Button>
+          )}
 
           {running && (
             <div className="space-y-1">
