@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { base44 } from "@/api/base44Client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchTopPairs, fetchPerpetualPairs, fetchKlines, formatPrice, formatVolume } from "../components/scanner/binanceApi";
@@ -66,8 +66,6 @@ export default function PaperTrading() {
   const [autoConfig, setAutoConfig] = useState(loadAutoConfig);
   const [showAutoSettings, setShowAutoSettings] = useState(false);
   const [user, setUser] = useState(null);
-  // cooldownMap: { [symbol]: timestamp when cooldown expires }
-  const cooldownMap = useRef({});
 
   // Persist config & enabled state to localStorage
   useEffect(() => { saveAutoConfig(autoConfig); }, [autoConfig]);
@@ -90,13 +88,19 @@ export default function PaperTrading() {
     refetchInterval: 15000, // re-fetch la 15s pentru a prinde închiderile din background
   });
 
-  // Istoric complet de tranzacții închise (nu mai e plafonat la 100 total)
+  // Istoric complet de tranzacții închise (folosit pentru calculul balanței cumulate)
   const { data: closedTrades = [] } = useQuery({
     queryKey: ["paper-trades", "closed", user?.email],
-    queryFn: () => base44.entities.PaperTrade.filter({ created_by: user.email, status: "closed" }, "-created_date", 2000),
+    queryFn: () => base44.entities.PaperTrade.filter({ created_by: user.email, status: "closed" }, "-created_date", 5000),
     enabled: !!user,
     refetchInterval: 30000,
   });
+
+  // Tranzacții închise în ultimele 24h - se resetează zilnic pentru win rate / istoric afișat
+  const last24hClosedTrades = useMemo(() => {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    return closedTrades.filter(t => new Date(t.updated_date || t.created_date).getTime() >= cutoff);
+  }, [closedTrades]);
 
   // Real-time subscription - invalideaza query-ul cand backend-ul modifica tranzactii
   useEffect(() => {
@@ -257,8 +261,6 @@ export default function PaperTrading() {
           exit_reason: reason,
         });
 
-         const cooldownMs = (cfg.cooldownMinutes || 60) * 60 * 1000;
-         cooldownMap.current[trade.symbol] = Date.now() + cooldownMs;
          log(`❌ ÎNCHIS ${trade.symbol} | ${reason} | P&L: ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}% | Cooldown: ${cfg.cooldownMinutes}min`);
        }
     }
@@ -295,9 +297,21 @@ export default function PaperTrading() {
     }
 
     const now = Date.now();
+    const cooldownMs = (cfg.cooldownMinutes || 60) * 60 * 1000;
+    // Cooldown bazat pe ultima închidere reală din DB (persistă la reload/navigare)
+    const lastClosedMap = {};
+    freshClosed.forEach(t => {
+      const closedAt = new Date(t.updated_date || t.created_date).getTime();
+      if (!lastClosedMap[t.symbol] || closedAt > lastClosedMap[t.symbol]) {
+        lastClosedMap[t.symbol] = closedAt;
+      }
+    });
     const candidates = pairs
       .filter(p => !openSymbols.has(p.symbol))
-      .filter(p => !(cooldownMap.current[p.symbol] > now))
+      .filter(p => {
+        const lastClosed = lastClosedMap[p.symbol];
+        return !(lastClosed && (now - lastClosed) < cooldownMs);
+      })
       .slice(0, Math.min(cfg.scanPairs ?? 100, pairs.length));
 
     let opened = 0;
@@ -519,8 +533,8 @@ export default function PaperTrading() {
   const availableBalance = initialBalance + totalPnL - lockedCapital;
   // Valoare totală portofoliu = disponibil + capital blocat + profit nerealizat
   const totalPortfolioValue = initialBalance + totalPnL + unrealizedPnL;
-  const winRate = closedTrades.length > 0
-    ? Math.round((closedTrades.filter(t => (t.pnl_usd || 0) > 0).length / closedTrades.length) * 100)
+  const winRate = last24hClosedTrades.length > 0
+    ? Math.round((last24hClosedTrades.filter(t => (t.pnl_usd || 0) > 0).length / last24hClosedTrades.length) * 100)
     : 0;
 
   if (!subLoading && !isPro) {
@@ -641,11 +655,11 @@ export default function PaperTrading() {
           </p>
         </div>
         <div className="bg-card border border-border rounded-xl p-4">
-          <p className="text-xs font-mono text-muted-foreground">WIN RATE</p>
+          <p className="text-xs font-mono text-muted-foreground">WIN RATE (24h)</p>
           <p className={`text-2xl font-bold mt-1 ${winRate >= 50 ? "text-chart-green" : "text-chart-red"}`}>
             {winRate}%
           </p>
-          <p className="text-[10px] text-muted-foreground mt-1">{closedTrades.length} tranzacții închise</p>
+          <p className="text-[10px] text-muted-foreground mt-1">{last24hClosedTrades.length} tranzacții în ultimele 24h</p>
         </div>
       </div>
 
@@ -728,11 +742,11 @@ export default function PaperTrading() {
         )}
       </div>
 
-      {/* Closed Trades */}
-      {closedTrades.length > 0 && (
+      {/* Closed Trades - ultimele 24h, se resetează zilnic */}
+      {last24hClosedTrades.length > 0 && (
         <div className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="p-4 border-b border-border">
-            <h3 className="text-sm font-semibold">📜 Istoric ({closedTrades.length})</h3>
+            <h3 className="text-sm font-semibold">📜 Istoric ultimele 24h ({last24hClosedTrades.length})</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -749,7 +763,7 @@ export default function PaperTrading() {
                 </tr>
               </thead>
               <tbody>
-                {closedTrades.slice(0, 50).map(trade => {
+                {last24hClosedTrades.slice(0, 50).map(trade => {
                   const tfMatch = trade.notes?.match(/TF:(\S+)/);
                   const tf = tfMatch ? tfMatch[1] : "—";
                   const openTime = trade.created_date ? new Date(trade.created_date).toLocaleString("ro-RO", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }) : "—";

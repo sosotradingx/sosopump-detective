@@ -51,12 +51,18 @@ export default function TradingDashboard() {
 
   const { data: trades = [], isLoading } = useQuery({
     queryKey: ["paper-trades-dashboard", user?.email],
-    queryFn: () => base44.entities.PaperTrade.filter({ created_by: user.email }, "-created_date", 500),
+    queryFn: () => base44.entities.PaperTrade.filter({ created_by: user.email }, "-created_date", 5000),
     enabled: !!user,
   });
 
   const closedTrades = useMemo(() => trades.filter(t => t.status === "closed"), [trades]);
   const openTrades = useMemo(() => trades.filter(t => t.status === "open"), [trades]);
+
+  // Tranzacții închise în ultimele 24h - folosite pentru Win Rate / Avg Win / Avg Loss (se resetează zilnic, sincronizat cu Paper Trading)
+  const last24hClosedTrades = useMemo(() => {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    return closedTrades.filter(t => new Date(t.updated_date || t.created_date).getTime() >= cutoff);
+  }, [closedTrades]);
 
   // Filter closed trades by selected period (for daily charts only)
   const filteredClosedTrades = useMemo(() => {
@@ -132,12 +138,12 @@ export default function TradingDashboard() {
 
   // --- Summary stats ---
   const totalPnL = closedTrades.reduce((s, t) => s + (t.pnl_usd || 0), 0);
-  const winRate = closedTrades.length > 0
-    ? Math.round((closedTrades.filter(t => (t.pnl_usd || 0) > 0).length / closedTrades.length) * 100) : 0;
-  const avgWin = closedTrades.filter(t => (t.pnl_usd || 0) > 0).reduce((s, t) => s + (t.pnl_usd || 0), 0)
-    / (closedTrades.filter(t => (t.pnl_usd || 0) > 0).length || 1);
-  const avgLoss = closedTrades.filter(t => (t.pnl_usd || 0) < 0).reduce((s, t) => s + (t.pnl_usd || 0), 0)
-    / (closedTrades.filter(t => (t.pnl_usd || 0) < 0).length || 1);
+  const winRate = last24hClosedTrades.length > 0
+    ? Math.round((last24hClosedTrades.filter(t => (t.pnl_usd || 0) > 0).length / last24hClosedTrades.length) * 100) : 0;
+  const avgWin = last24hClosedTrades.filter(t => (t.pnl_usd || 0) > 0).reduce((s, t) => s + (t.pnl_usd || 0), 0)
+    / (last24hClosedTrades.filter(t => (t.pnl_usd || 0) > 0).length || 1);
+  const avgLoss = last24hClosedTrades.filter(t => (t.pnl_usd || 0) < 0).reduce((s, t) => s + (t.pnl_usd || 0), 0)
+    / (last24hClosedTrades.filter(t => (t.pnl_usd || 0) < 0).length || 1);
   const finalBalance = 10000 + totalPnL;
 
   if (!subLoading && !isPro) {
@@ -159,7 +165,7 @@ export default function TradingDashboard() {
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Activity className="w-6 h-6 text-primary" /> Trading Dashboard
         </h1>
-        <p className="text-sm text-muted-foreground">Analiză performanță · {closedTrades.length} tranzacții închise · {openTrades.length} deschise</p>
+        <p className="text-sm text-muted-foreground">Analiză performanță · {closedTrades.length} tranzacții închise (all-time) · {last24hClosedTrades.length} în ultimele 24h · {openTrades.length} deschise</p>
       </div>
 
       {/* Summary Cards */}
@@ -169,8 +175,8 @@ export default function TradingDashboard() {
         <StatCard label="P&L TOTAL" value={`${totalPnL >= 0 ? "+" : ""}$${totalPnL.toFixed(2)}`}
           sub={`${((totalPnL / 10000) * 100).toFixed(2)}% ROI`}
           color={totalPnL >= 0 ? "text-chart-green" : "text-chart-red"} />
-        <StatCard label="WIN RATE" value={`${winRate}%`}
-          sub={`${closedTrades.filter(t => (t.pnl_usd || 0) > 0).length}W / ${closedTrades.filter(t => (t.pnl_usd || 0) <= 0).length}L`}
+        <StatCard label="WIN RATE (24h)" value={`${winRate}%`}
+          sub={`${last24hClosedTrades.filter(t => (t.pnl_usd || 0) > 0).length}W / ${last24hClosedTrades.filter(t => (t.pnl_usd || 0) <= 0).length}L`}
           color={winRate >= 50 ? "text-chart-green" : "text-chart-red"} />
         <StatCard label="AVG WIN" value={`+$${avgWin.toFixed(2)}`} color="text-chart-green" />
         <StatCard label="AVG LOSS" value={`$${avgLoss.toFixed(2)}`} color="text-chart-red" />
