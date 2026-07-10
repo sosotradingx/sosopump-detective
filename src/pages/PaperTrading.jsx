@@ -362,6 +362,13 @@ export default function PaperTrading() {
           log(`🚫 Capital insuficient pentru ${pair.symbol}: $${runningBalance.toFixed(2)} disponibil`);
           break outer;
         }
+        // Verificare finală direct în DB - previne dublarea când botul rulează concurent (ex: mai multe tab-uri)
+        const dupCheck = await base44.entities.PaperTrade.filter({ created_by: freshUser.email, symbol: pair.symbol, status: "open" }, "-created_date", 1);
+        if (dupCheck.length > 0) {
+          openSymbols.add(pair.symbol);
+          continue;
+        }
+
         const price = priceMap[pair.symbol] || pair.price;
         const precisionFactor = price < 0.001 ? 1e10 : price < 0.01 ? 1e8 : price < 1 ? 1e6 : 1e4;
         const quantity = Math.floor((cfg.tradeSize / price) * 1000) / 1000;
