@@ -54,6 +54,10 @@ function saveAutoConfig(cfg) {
   try { localStorage.setItem("soso_auto_config", JSON.stringify(cfg)); } catch {}
 }
 
+// Flag la nivel de modul (nu ref de componentă) - previne sesiuni de scan concurente
+// când componenta se remontează (navigare/refresh de tab) în timp ce un scan vechi încă rulează
+let paperBotRunningGlobal = false;
+
 export default function PaperTrading() {
   const { isPro, loading: subLoading } = useSubscription();
   const queryClient = useQueryClient();
@@ -72,7 +76,6 @@ export default function PaperTrading() {
   useEffect(() => { try { localStorage.setItem("soso_auto_enabled", String(autoEnabled)); } catch {} }, [autoEnabled]);
   const [botLog, setBotLog] = useState([]);
   const [botRunning, setBotRunning] = useState(false);
-  const botRunningRef = useRef(false);
   const autoConfigRef = useRef(autoConfig);
   const autoIntervalRef = useRef(null);
 
@@ -155,8 +158,8 @@ export default function PaperTrading() {
 
   // --- Auto-trading logic ---
   const runAutoBot = useCallback(async () => {
-    if (botRunningRef.current) return;
-    botRunningRef.current = true;
+    if (paperBotRunningGlobal) return;
+    paperBotRunningGlobal = true;
     setBotRunning(true);
 
     const cfg = autoConfigRef.current;
@@ -282,7 +285,7 @@ export default function PaperTrading() {
 
     if (availableBalance < cfg.tradeSize) {
       log(`🚫 Balanță insuficientă: $${availableBalance.toFixed(2)} < $${cfg.tradeSize} necesar`);
-      botRunningRef.current = false;
+      paperBotRunningGlobal = false;
       setBotRunning(false);
       queryClient.invalidateQueries({ queryKey: ["paper-trades"] });
       return;
@@ -290,7 +293,7 @@ export default function PaperTrading() {
 
     if (freshOpen.length >= cfg.maxOpenTrades) {
       log(`⏸ Max poziții atinse (${cfg.maxOpenTrades})`);
-      botRunningRef.current = false;
+      paperBotRunningGlobal = false;
       setBotRunning(false);
       queryClient.invalidateQueries({ queryKey: ["paper-trades"] });
       return;
@@ -399,7 +402,7 @@ export default function PaperTrading() {
       log(`🔍 Scan complet (${scanned}/${candidates.length} analizate) · Scor minim: ${cfg.minScore} · Top scor găsit: ${topScore}${topSymbol ? ` pe ${topSymbol}` : ""} · ${topScore < cfg.minScore ? `Încearcă scor minim ≤ ${topScore}` : "Semnal dispărut"}`);
     }
     queryClient.invalidateQueries({ queryKey: ["paper-trades"] });
-    botRunningRef.current = false;
+    paperBotRunningGlobal = false;
     setBotRunning(false);
   }, [queryClient]);
 
