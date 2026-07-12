@@ -58,6 +58,18 @@ function saveAutoConfig(cfg) {
 // când componenta se remontează (navigare/refresh de tab) în timp ce un scan vechi încă rulează
 let paperBotRunningGlobal = false;
 
+// Session lock persistat în localStorage - detectează și oprește sesiuni vechi
+// chiar și din alte tab-uri ale browserului. Fiecare pornire de bot scrie un ID nou,
+// invalidând automat orice sesiune anterioară care încă rulează.
+function startNewBotSession() {
+  const id = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  try { localStorage.setItem("soso_bot_session_id", id); } catch {}
+  return id;
+}
+function isActiveBotSession(id) {
+  try { return localStorage.getItem("soso_bot_session_id") === id; } catch { return true; }
+}
+
 export default function PaperTrading() {
   const { isPro, loading: subLoading } = useSubscription();
   const queryClient = useQueryClient();
@@ -157,11 +169,13 @@ export default function PaperTrading() {
   }, [loadPrices]);
 
   // --- Auto-trading logic ---
-  const runAutoBot = useCallback(async () => {
+  const runAutoBot = useCallback(async (sessionId) => {
     if (paperBotRunningGlobal) return;
+    if (sessionId && !isActiveBotSession(sessionId)) return; // o sesiune mai nouă a preluat deja controlul
     paperBotRunningGlobal = true;
     setBotRunning(true);
 
+    try {
     const cfg = autoConfigRef.current;
     const currentUser = await base44.auth.me();
     const currentTrades = currentUser
@@ -285,16 +299,12 @@ export default function PaperTrading() {
 
     if (availableBalance < cfg.tradeSize) {
       log(`🚫 Balanță insuficientă: $${availableBalance.toFixed(2)} < $${cfg.tradeSize} necesar`);
-      paperBotRunningGlobal = false;
-      setBotRunning(false);
       queryClient.invalidateQueries({ queryKey: ["paper-trades"] });
       return;
     }
 
     if (freshOpen.length >= cfg.maxOpenTrades) {
       log(`⏸ Max poziții atinse (${cfg.maxOpenTrades})`);
-      paperBotRunningGlobal = false;
-      setBotRunning(false);
       queryClient.invalidateQueries({ queryKey: ["paper-trades"] });
       return;
     }
@@ -326,6 +336,10 @@ export default function PaperTrading() {
 
     const BATCH = 25;
     outer: for (let bi = 0; bi < candidates.length; bi += BATCH) {
+      if (sessionId && !isActiveBotSession(sessionId)) {
+        log(`⏹ Sesiune veche oprită - o sesiune nouă a preluat controlul`);
+        break outer;
+      }
       const chunk = candidates.slice(bi, bi + BATCH);
       for (const pair of chunk) {
       if (freshOpen.length + opened >= cfg.maxOpenTrades) break outer;
@@ -402,8 +416,10 @@ export default function PaperTrading() {
       log(`🔍 Scan complet (${scanned}/${candidates.length} analizate) · Scor minim: ${cfg.minScore} · Top scor găsit: ${topScore}${topSymbol ? ` pe ${topSymbol}` : ""} · ${topScore < cfg.minScore ? `Încearcă scor minim ≤ ${topScore}` : "Semnal dispărut"}`);
     }
     queryClient.invalidateQueries({ queryKey: ["paper-trades"] });
-    paperBotRunningGlobal = false;
-    setBotRunning(false);
+    } finally {
+      paperBotRunningGlobal = false;
+      setBotRunning(false);
+    }
   }, [queryClient]);
 
   // Convert timeframe string to milliseconds
@@ -422,12 +438,14 @@ export default function PaperTrading() {
       clearInterval(autoIntervalRef.current);
       return;
     }
+    // Sesiune nouă - invalidează automat orice sesiune veche (alt tab sau remount anterior)
+    const sessionId = startNewBotSession();
     // Run immediately, then schedule based on current timeframe
-    runAutoBotRef.current();
+    runAutoBotRef.current(sessionId);
     const scheduleNext = () => {
       const intervalMs = tfToMs(autoConfigRef.current.timeframe);
       autoIntervalRef.current = setTimeout(() => {
-        runAutoBotRef.current();
+        runAutoBotRef.current(sessionId);
         scheduleNext();
       }, intervalMs);
     };
