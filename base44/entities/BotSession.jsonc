@@ -1,0 +1,74 @@
+{
+  "name": "BotSession",
+  "type": "object",
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "ID unic al sesiunii de scanare a botului"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "running",
+        "stopped"
+      ],
+      "default": "running"
+    },
+    "started_at": {
+      "type": "string",
+      "description": "Data pornirii sesiunii (ISO)"
+    },
+    "last_heartbeat": {
+      "type": "string",
+      "description": "Ultimul semnal de activitate al sesiunii (ISO)"
+    },
+    "timeframe": {
+      "type": "string",
+      "description": "Timeframe-ul configurat pentru sesiune"
+    }
+  },
+  "required": [
+    "session_id"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "$or": [
+        {
+          "created_by": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "created_by": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

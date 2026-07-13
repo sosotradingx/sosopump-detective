@@ -90,6 +90,7 @@ export default function PaperTrading() {
   const [botRunning, setBotRunning] = useState(false);
   const autoConfigRef = useRef(autoConfig);
   const autoIntervalRef = useRef(null);
+  const botSessionRecordIdRef = useRef(null);
 
   // Keep ref in sync with state
   useEffect(() => { autoConfigRef.current = autoConfig; }, [autoConfig]);
@@ -440,6 +441,14 @@ export default function PaperTrading() {
     }
     // Sesiune nouă - invalidează automat orice sesiune veche (alt tab sau remount anterior)
     const sessionId = startNewBotSession();
+    // Înregistrează sesiunea în DB pentru pagina de monitorizare Bot Status
+    base44.entities.BotSession.create({
+      session_id: sessionId,
+      status: "running",
+      started_at: new Date().toISOString(),
+      last_heartbeat: new Date().toISOString(),
+      timeframe: autoConfigRef.current.timeframe,
+    }).then(rec => { botSessionRecordIdRef.current = rec.id; }).catch(() => {});
     // Run immediately, then schedule based on current timeframe
     runAutoBotRef.current(sessionId);
     const scheduleNext = () => {
@@ -450,7 +459,24 @@ export default function PaperTrading() {
       }, intervalMs);
     };
     scheduleNext();
-    return () => clearTimeout(autoIntervalRef.current);
+    return () => {
+      clearTimeout(autoIntervalRef.current);
+      if (botSessionRecordIdRef.current) {
+        base44.entities.BotSession.update(botSessionRecordIdRef.current, { status: "stopped" }).catch(() => {});
+        botSessionRecordIdRef.current = null;
+      }
+    };
+  }, [autoEnabled]);
+
+  // Heartbeat - marchează periodic sesiunea ca activă, pentru pagina Bot Status
+  useEffect(() => {
+    if (!autoEnabled) return;
+    const hb = setInterval(() => {
+      if (botSessionRecordIdRef.current) {
+        base44.entities.BotSession.update(botSessionRecordIdRef.current, { last_heartbeat: new Date().toISOString() }).catch(() => {});
+      }
+    }, 20000);
+    return () => clearInterval(hb);
   }, [autoEnabled]);
 
   // --- SL/TP Monitor: rulează la fiecare 15s, complet independent de state ---

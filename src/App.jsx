@@ -13,6 +13,7 @@ import Pricing from './pages/Pricing.jsx';
 import AdminSubscriptions from './pages/AdminSubscriptions.jsx';
 import AlertSettings from './pages/AlertSettings.jsx';
 import Landing from './pages/Landing.jsx';
+import BotMonitor from './pages/BotMonitor.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
@@ -78,6 +79,7 @@ const AuthenticatedApp = () => {
       <Route path="/Pricing" element={<LayoutWrapper currentPageName="Pricing"><Pricing /></LayoutWrapper>} />
       <Route path="/AdminSubscriptions" element={<LayoutWrapper currentPageName="AdminSubscriptions"><AdminSubscriptions /></LayoutWrapper>} />
       <Route path="/AlertSettings" element={<LayoutWrapper currentPageName="AlertSettings"><AlertSettings /></LayoutWrapper>} />
+      <Route path="/bot-monitor" element={<LayoutWrapper currentPageName="BotMonitor"><BotMonitor /></LayoutWrapper>} />
       <Route path="/landing" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
