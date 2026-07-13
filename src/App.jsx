@@ -20,6 +20,7 @@ import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
+import { AutoBotProvider } from '@/lib/AutoBotContext';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -57,7 +58,10 @@ const AuthenticatedApp = () => {
   }
 
   // Render the main app
+  // AutoBotProvider e montat aici (nu în pagina Paper Trading), astfel încât botul
+  // să continue să scaneze chiar dacă utilizatorul navighează pe altă pagină.
   return (
+    <AutoBotProvider>
     <Routes>
       <Route path="/" element={<Landing />} />
       {Object.entries(Pages).map(([path, Page]) => (
@@ -88,6 +92,7 @@ const AuthenticatedApp = () => {
       <Route path="/Dashboard" element={<LayoutWrapper currentPageName="Dashboard"><MainPage /></LayoutWrapper>} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
+    </AutoBotProvider>
   );
 };
 
