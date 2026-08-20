@@ -5,6 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useSubscription } from "@/hooks/useSubscription";
+import { EXCHANGES, DEFAULT_EXCHANGE } from "@/lib/exchanges";
 
 export default function ScannerSettings({ settings, onChange, onClose }) {
   const { isFree } = useSubscription();
@@ -62,7 +63,26 @@ export default function ScannerSettings({ settings, onChange, onClose }) {
                 <SelectItem value="spot">📈 Spot Market</SelectItem>
               </SelectContent>
             </Select>
+            <p className="text-[11px] text-muted-foreground mt-1">Spot folosește doar Binance.</p>
           </section>
+
+          {/* Exchange (perpetuals only) */}
+          {settings.marketSource !== "spot" && (
+            <section>
+              <h3 className="text-xs font-mono uppercase text-muted-foreground mb-3">Exchange</h3>
+              <Select value={settings.exchange || DEFAULT_EXCHANGE} onValueChange={v => set("exchange", v)}>
+                <SelectTrigger className="bg-secondary">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EXCHANGES.map(e => (
+                    <SelectItem key={e.id} value={e.id}>{e.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground mt-1">Schimbă sursa perpetuals între Binance și Bybit.</p>
+            </section>
+          )}
 
           {/* Pairs limit */}
           <section>

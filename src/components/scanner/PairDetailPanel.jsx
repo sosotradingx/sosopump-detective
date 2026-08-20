@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { formatPrice, formatVolume, fetchKlines } from "./binanceApi";
+import { fetchScannerKlines, DEFAULT_EXCHANGE } from "@/lib/exchanges";
 import { analyzePump } from "./pumpEngine";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,8 @@ export default function PairDetailPanel({ pair, isFavorite, onToggleFavorite, on
   const loadChart = async (tf) => {
     if (!pair) return;
     setLoadingChart(true);
-    const data = await fetchKlines(pair.symbol, tf, 150, true);
+    const ex = pair.exchange || DEFAULT_EXCHANGE;
+    const data = await fetchScannerKlines(ex, pair.symbol, tf, 150);
     setKlines(data);
     if (data.length > 50) {
       const analysis = analyzePump(data);

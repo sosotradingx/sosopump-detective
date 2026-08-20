@@ -2,10 +2,12 @@ import React from "react";
 import { X, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export default function TradingViewModal({ symbol, onClose }) {
+export default function TradingViewModal({ symbol, exchange = "binance", onClose }) {
   if (!symbol) return null;
 
-  const tvSymbol = `BINANCE:${symbol}`;
+  const prefix = exchange === "bybit" ? "BYBIT:" : "BINANCE:";
+  const suffix = exchange === "bybit" ? ".P" : "";
+  const tvSymbol = `${prefix}${symbol}${suffix}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>

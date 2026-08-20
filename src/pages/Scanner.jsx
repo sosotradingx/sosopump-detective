@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { fetchTopPairs, fetchPerpetualPairs, fetchKlines, analyzePairsInBatches } from "../components/scanner/binanceApi";
+import { fetchTopPairs, fetchKlines, analyzePairsInBatches } from "../components/scanner/binanceApi";
+import { fetchScannerPairs, fetchScannerKlines, DEFAULT_EXCHANGE, exchangeName, EXCHANGES } from "@/lib/exchanges";
 import { analyzePump } from "../components/scanner/pumpEngine";
 import ScannerRow from "../components/scanner/ScannerRow";
 import TradingViewModal from "../components/scanner/TradingViewModal";
@@ -19,6 +20,7 @@ const DEFAULT_SETTINGS = {
   maxPairs: 100,
   minVolume: 500000,
   marketSource: "perpetuals",
+  exchange: DEFAULT_EXCHANGE,
   use_macd_confirmation: true,
   use_bb_squeeze: true,
   use_adx_filter: true,
@@ -45,6 +47,7 @@ export default function Scanner() {
   });
   const [lastUpdate, setLastUpdate] = useState(null);
   const [selectedSymbol, setSelectedSymbol] = useState(null);
+  const [selectedExchange, setSelectedExchange] = useState(null);
   const [selectedPair, setSelectedPair] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
@@ -100,8 +103,9 @@ export default function Scanner() {
     setPairs([]);
 
     const isPerpetual = settings.marketSource !== "spot";
+    const exchange = isPerpetual ? (settings.exchange || DEFAULT_EXCHANGE) : DEFAULT_EXCHANGE;
     const topPairs = isPerpetual
-      ? await fetchPerpetualPairs(settings.maxPairs, settings.minVolume)
+      ? await fetchScannerPairs(exchange, settings.maxPairs, settings.minVolume)
       : await fetchTopPairs("USDT", settings.maxPairs || 100, settings.minVolume);
 
     const analyzed = [];
@@ -109,9 +113,12 @@ export default function Scanner() {
     await analyzePairsInBatches(
       topPairs,
       async (pair) => {
-        const klines = await fetchKlines(pair.symbol, settings.timeframe, 100, isPerpetual);
+        const ex = pair.exchange || exchange;
+        const klines = isPerpetual
+          ? await fetchScannerKlines(ex, pair.symbol, settings.timeframe, 100)
+          : await fetchKlines(pair.symbol, settings.timeframe, 100, false);
         const analysis = analyzePump(klines, settings);
-        const result = { ...pair, analysis };
+        const result = { ...pair, exchange: ex, analysis };
 
         // Check for strong pump alerts
         const score = analysis?.totalScore || 0;
@@ -180,10 +187,26 @@ export default function Scanner() {
           <h1 className="text-2xl font-bold">🔍 Pump Scanner</h1>
           <p className="text-sm text-muted-foreground">
             {pairs.length} perechi scanate · {filtered.length} afișate · TF: <span className="text-primary font-mono">{settings.timeframe}</span>
+            {settings.marketSource !== "spot" && ` · ${exchangeName(settings.exchange || DEFAULT_EXCHANGE)}`}
             {lastUpdate && ` · ${lastUpdate.toLocaleTimeString("ro-RO")}`}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {settings.marketSource !== "spot" && (
+            <Select
+              value={settings.exchange || DEFAULT_EXCHANGE}
+              onValueChange={v => setSettings(s => ({ ...s, exchange: v }))}
+            >
+              <SelectTrigger className="w-36 bg-card">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {EXCHANGES.map(e => (
+                  <SelectItem key={e.id} value={e.id}>{e.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Button
             variant="outline" size="sm"
             className={showFavoritesOnly ? "border-chart-gold text-chart-gold" : ""}
@@ -308,7 +331,7 @@ export default function Scanner() {
                 <ScannerRow
                   key={pair.symbol}
                   pair={pair}
-                  onSelect={(sym) => setSelectedSymbol(sym)}
+                  onSelect={(sym) => { setSelectedSymbol(sym); setSelectedExchange(pair.exchange || DEFAULT_EXCHANGE); }}
                   onRowClick={(p) => setSelectedPair(p)}
                   isFavorite={isFavorite(pair.symbol)}
                   onToggleFavorite={() => toggleFavorite(pair.symbol)}
@@ -333,6 +356,7 @@ export default function Scanner() {
       {selectedSymbol && (
         <TradingViewModal
           symbol={selectedSymbol}
+          exchange={selectedExchange || (settings.exchange || DEFAULT_EXCHANGE)}
           onClose={() => setSelectedSymbol(null)}
         />
       )}
