@@ -75,6 +75,8 @@ export function AutoBotProvider({ children }) {
   const autoConfigRef = useRef(autoConfig);
   const autoIntervalRef = useRef(null);
   const botSessionRecordIdRef = useRef(null);
+  const exitTimerRef = useRef(null);
+  const lastOpenCountRef = useRef(0);
 
   useEffect(() => { saveAutoConfig(autoConfig); }, [autoConfig]);
   useEffect(() => { try { localStorage.setItem("soso_auto_enabled", String(autoEnabled)); } catch {} }, [autoEnabled]);
@@ -90,8 +92,9 @@ export function AutoBotProvider({ children }) {
     try {
       const cfg = autoConfigRef.current;
       const currentUser = await base44.auth.me().catch(() => null);
-      if (!currentUser) return;
+      if (!currentUser) { lastOpenCountRef.current = 0; return; }
       const openTrades = await base44.entities.PaperTrade.filter({ created_by: currentUser.email, status: "open" }, "-created_date", 200);
+      lastOpenCountRef.current = openTrades.length;
       if (!openTrades.length) return;
 
       const isPerpetual = cfg.marketSource !== "spot";
@@ -173,11 +176,18 @@ export function AutoBotProvider({ children }) {
     }
   }, [queryClient, log]);
 
-  // Monitorul pornește imediat și la 15s — indiferent de autoEnabled
+  // Monitor adaptiv: 15s când există poziții deschise, 60s când e idle.
+  // Reduge drastic volumul de citiri DB și evită limita de trafic (429) în repaus.
   useEffect(() => {
-    checkExits();
-    const interval = setInterval(checkExits, 15000);
-    return () => clearInterval(interval);
+    let cancelled = false;
+    const loop = async () => {
+      if (cancelled) return;
+      await checkExits();
+      const intervalMs = lastOpenCountRef.current > 0 ? 15000 : 60000;
+      exitTimerRef.current = setTimeout(loop, intervalMs);
+    };
+    loop();
+    return () => { cancelled = true; clearTimeout(exitTimerRef.current); };
   }, [checkExits]);
 
   // === SCAN & DESCHIDERE poziții noi (când autoEnabled) ===

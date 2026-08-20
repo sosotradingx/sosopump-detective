@@ -31,7 +31,7 @@ export default function PaperTrading() {
     queryKey: ["paper-trades", "open", user?.email],
     queryFn: () => base44.entities.PaperTrade.filter({ created_by: user.email, status: "open" }, "-created_date", 200),
     enabled: !!user,
-    refetchInterval: 15000, // re-fetch la 15s pentru a prinde închiderile din background
+    refetchInterval: 30000, // monitorul SL/TP din AutoBotContext invalidă query-ul la schimbare
   });
 
   // Istoric complet de tranzacții închise (folosit pentru calculul balanței cumulate)
@@ -39,7 +39,7 @@ export default function PaperTrading() {
     queryKey: ["paper-trades", "closed", user?.email],
     queryFn: () => base44.entities.PaperTrade.filter({ created_by: user.email, status: "closed" }, "-created_date", 5000),
     enabled: !!user,
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
 
   // Tranzacții închise în ultimele 24h - se resetează zilnic pentru win rate / istoric afișat
