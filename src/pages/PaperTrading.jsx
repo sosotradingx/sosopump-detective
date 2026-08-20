@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { base44 } from "@/api/base44Client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchTopPairs, formatPrice } from "../components/scanner/binanceApi";
@@ -99,71 +99,8 @@ export default function PaperTrading() {
     return () => clearInterval(interval);
   }, [loadPrices]);
 
-  // --- SL/TP Monitor: rulează la fiecare 15s, complet independent de state ---
-  const monitorRunning = useRef(false);
-  const userRef = useRef(null);
-  useEffect(() => { userRef.current = user; }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-
-    const checkSlTp = async () => {
-      if (monitorRunning.current) return;
-      monitorRunning.current = true;
-      try {
-        // Fetch direct din DB - nu depinde de state
-        const u = userRef.current;
-        if (!u) return;
-        const allTrades = await base44.entities.PaperTrade.filter({ created_by: u.email, status: "open" }, "-created_date", 200);
-        if (!allTrades.length) return;
-
-        // Fetch toate prețurile simultan
-        const symbols = [...new Set(allTrades.map(t => t.symbol))];
-        const livePrice = {};
-        await Promise.all(symbols.map(async (sym) => {
-          try {
-            const r = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${sym}`);
-            const d = await r.json();
-            if (d.price) livePrice[sym] = parseFloat(d.price);
-          } catch {}
-        }));
-
-        let anyChanged = false;
-        for (const trade of allTrades) {
-          const cur = livePrice[trade.symbol];
-          if (!cur || !trade.entry_price) continue;
-
-          let reason = null;
-          if (trade.stop_loss > 0 && cur <= trade.stop_loss) reason = "stop_loss";
-          else if (trade.take_profit > 0 && cur >= trade.take_profit) reason = "take_profit";
-
-          if (reason) {
-            const pnlPct = ((cur - trade.entry_price) / trade.entry_price) * 100;
-            const pnlUsd = (cur - trade.entry_price) * trade.quantity;
-            await base44.entities.PaperTrade.update(trade.id, {
-              status: "closed",
-              exit_price: cur,
-              pnl_percent: Math.round(pnlPct * 100) / 100,
-              pnl_usd: Math.round(pnlUsd * 100) / 100,
-              exit_reason: reason,
-            });
-            anyChanged = true;
-          }
-        }
-        if (anyChanged) queryClient.invalidateQueries({ queryKey: ["paper-trades"] });
-      } catch (err) {
-        console.warn("SL/TP monitor skipped a cycle (network error):", err?.message || err);
-      } finally {
-        monitorRunning.current = false;
-      }
-    };
-
-    // Rulează imediat și la fiecare 15 secunde
-    checkSlTp();
-    const interval = setInterval(checkSlTp, 15000);
-    return () => clearInterval(interval);
-  }, [user, queryClient]);
-
+  // NOTĂ: Monitorul SL/TP a fost mutat în AutoBotContext (sursă unică la nivel de app),
+  // astfel încât pozițiile sunt protejate indiferent de pagina pe care se află userul.
   const handleOpenTrade = () => {
     const price = prices[newTrade.symbol] || 0;
     createTrade.mutate({
