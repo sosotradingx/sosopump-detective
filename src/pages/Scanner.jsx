@@ -5,6 +5,7 @@ import { analyzePump } from "../components/scanner/pumpEngine";
 import { analyzeHarmonics } from "@/lib/harmonicEngine";
 import ScannerRow from "../components/scanner/ScannerRow";
 import TradingViewModal from "../components/scanner/TradingViewModal";
+import HarmonicChartModal from "../components/scanner/HarmonicChartModal";
 import ScannerSettings from "../components/scanner/ScannerSettings";
 import PairDetailPanel from "../components/scanner/PairDetailPanel";
 import AlertsPanel from "../components/alerts/AlertsPanel";
@@ -56,6 +57,7 @@ export default function Scanner() {
   const [atlLoading, setAtlLoading] = useState(false);
   const [atlMap, setAtlMap] = useState({});
   const [harmonics, setHarmonics] = useState(false);
+  const [chartPair, setChartPair] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [showAlerts, setShowAlerts] = useState(false);
   const notifiedRef = useRef(new Set());
@@ -419,7 +421,7 @@ export default function Scanner() {
                   pair={pair}
                   showATL={nearATL}
                   showHarmonic={harmonics}
-                  onSelect={(sym) => { setSelectedSymbol(sym); setSelectedExchange(pair.exchange || DEFAULT_EXCHANGE); }}
+                  onSelect={(sym) => { setSelectedSymbol(sym); setSelectedExchange(pair.exchange || DEFAULT_EXCHANGE); setChartPair(pair); }}
                   onRowClick={(p) => setSelectedPair(p)}
                   isFavorite={isFavorite(pair.symbol)}
                   onToggleFavorite={() => toggleFavorite(pair.symbol)}
@@ -440,12 +442,18 @@ export default function Scanner() {
         />
       )}
 
-      {/* TradingView Modal */}
-      {selectedSymbol && (
-        <TradingViewModal
-          symbol={selectedSymbol}
-          exchange={selectedExchange || (settings.exchange || DEFAULT_EXCHANGE)}
-          onClose={() => setSelectedSymbol(null)}
+      {/* Harmonic Chart Modal (eye icon) */}
+      {chartPair && (
+        <HarmonicChartModal
+          pair={chartPair}
+          timeframe={settings.timeframe}
+          fetchKlinesFn={async (symbol, tf, limit) => {
+            const isPerp = settings.marketSource !== "spot";
+            return isPerp
+              ? await fetchScannerKlines(chartPair.exchange || DEFAULT_EXCHANGE, symbol, tf, limit)
+              : await fetchKlines(symbol, tf, limit, false);
+          }}
+          onClose={() => { setChartPair(null); setSelectedSymbol(null); }}
         />
       )}
 
