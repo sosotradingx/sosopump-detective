@@ -12,7 +12,7 @@ const statusConfig = {
   INACTIVE: { bg: "bg-muted/10",         text: "text-muted-foreground", border: "border-border" },
 };
 
-export default function ScannerRow({ pair, onSelect, onRowClick, isFavorite, onToggleFavorite, showATL }) {
+export default function ScannerRow({ pair, onSelect, onRowClick, isFavorite, onToggleFavorite, showATL, showHarmonic }) {
   const a = pair.analysis || {};
   const sc = statusConfig[a.pumpStatus] || statusConfig.INACTIVE;
   const positive = pair.priceChangePercent >= 0;
@@ -70,6 +70,29 @@ export default function ScannerRow({ pair, onSelect, onRowClick, isFavorite, onT
           {a.obvDivergence && <span className="text-[9px]" title="OBV Div">📈</span>}
         </div>
       </td>
+      {showHarmonic && (
+        <td className="p-3 text-center">
+          {(() => {
+            const h = pair.harmonic?.best;
+            if (!h) return <span className="text-muted-foreground/40 text-xs">-</span>;
+            const gradeColor =
+              h.grade === "A+" ? "text-pump-strong" :
+              h.grade === "A" ? "text-chart-green" :
+              h.grade === "B" ? "text-chart-blue" :
+              h.grade === "C" ? "text-chart-gold" : "text-muted-foreground";
+            return (
+              <div className="flex flex-col items-center gap-0.5">
+                <Badge variant="outline" className={`text-[9px] ${h.bullish ? "border-chart-green/40 text-chart-green" : "border-chart-red/40 text-chart-red"}`}>
+                  {h.completed ? "✓" : "○"} {h.bullish ? "▲" : "▼"} {h.name}
+                </Badge>
+                <span className={`text-[10px] font-mono font-semibold ${gradeColor}`}>
+                  {h.conf}% {h.grade}
+                </span>
+              </div>
+            );
+          })()}
+        </td>
+      )}
       {showATL && (
         <td className="p-3 text-right font-mono text-xs">
           {pair.atlDistancePct != null ? (

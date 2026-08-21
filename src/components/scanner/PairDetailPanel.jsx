@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { formatPrice, formatVolume, fetchKlines } from "./binanceApi";
 import { fetchScannerKlines, DEFAULT_EXCHANGE } from "@/lib/exchanges";
 import { analyzePump } from "./pumpEngine";
+import { analyzeHarmonics } from "@/lib/harmonicEngine";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,6 +17,7 @@ export default function PairDetailPanel({ pair, isFavorite, onToggleFavorite, on
   const [klines, setKlines] = useState([]);
   const [loadingChart, setLoadingChart] = useState(false);
   const [liveAnalysis, setLiveAnalysis] = useState(null);
+  const [harmonic, setHarmonic] = useState(null);
 
   const loadChart = async (tf) => {
     if (!pair) return;
@@ -26,6 +28,7 @@ export default function PairDetailPanel({ pair, isFavorite, onToggleFavorite, on
     if (data.length > 50) {
       const analysis = analyzePump(data);
       setLiveAnalysis(analysis);
+      setHarmonic(analyzeHarmonics(data, "fast"));
     }
     setLoadingChart(false);
   };
@@ -150,6 +153,61 @@ export default function PairDetailPanel({ pair, isFavorite, onToggleFavorite, on
 
         {/* Score Breakdown */}
         <ScoreBreakdown analysis={a} />
+
+        {/* Harmonic Patterns */}
+        {harmonic?.patterns?.length > 0 && (
+          <div className="bg-secondary/30 rounded-lg p-3 space-y-2">
+            <p className="text-[10px] text-muted-foreground uppercase font-mono">🦋 Tipare Armonice</p>
+            {harmonic.patterns.map((h, i) => (
+              <div key={i} className="border border-border/40 rounded-lg p-2 bg-card">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[10px] font-bold ${h.bullish ? "text-chart-green" : "text-chart-red"}`}>
+                      {h.bullish ? "▲ BULLISH" : "▼ BEARISH"}
+                    </span>
+                    <span className="text-xs font-semibold text-chart-gold">{h.name}</span>
+                    <Badge variant="outline" className="text-[9px]">{h.status}</Badge>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs font-mono font-bold text-chart-gold">{h.conf}%</span>
+                    <Badge variant="outline" className="text-[9px]">{h.grade}</Badge>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] font-mono">
+                  <span className="text-muted-foreground">Ratios:</span>
+                  <span className={`text-right ${h.checks.okAB ? "text-chart-green" : "text-muted-foreground"}`}>
+                    XAB {h.ratios.rAB?.toFixed(3)} {h.checks.okAB ? "✔" : "✖"}
+                  </span>
+                  <span className="text-muted-foreground"> </span>
+                  <span className={`text-right ${h.checks.okBC ? "text-chart-green" : "text-muted-foreground"}`}>
+                    ABC {h.ratios.rBC?.toFixed(3)} {h.checks.okBC ? "✔" : "✖"}
+                  </span>
+                  <span className="text-muted-foreground"> </span>
+                  <span className={`text-right ${h.checks.okCD ? "text-chart-green" : "text-muted-foreground"}`}>
+                    BCD {h.ratios.rCD?.toFixed(3)} {h.checks.okCD ? "✔" : "✖"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] font-mono mt-1">
+                  <span className="text-muted-foreground">Fit / PRZ:</span>
+                  <span className="text-right text-foreground">{Math.round(h.fit)}% / {Math.round(h.prz)}%</span>
+                  <span className="text-muted-foreground">PRZ Zone:</span>
+                  <span className="text-right text-foreground">{h.przZone.bottom.toFixed(4)} – {h.przZone.top.toFixed(4)}</span>
+                  <span className="text-muted-foreground">Entry / SL:</span>
+                  <span className="text-right text-foreground">{h.entry.toFixed(4)} / <span className="text-chart-red">{h.sl.toFixed(4)}</span></span>
+                  <span className="text-muted-foreground">TP1 / TP2 / TP3:</span>
+                  <span className="text-right text-chart-green">{h.tp1.toFixed(4)} / {h.tp2.toFixed(4)} / {h.tp3.toFixed(4)}</span>
+                  <span className="text-muted-foreground">R:R (TP2):</span>
+                  <span className="text-right text-chart-gold">1:{h.rr.toFixed(2)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {harmonic && !harmonic.best && (
+          <div className="bg-secondary/30 rounded-lg p-3 text-center">
+            <p className="text-xs text-muted-foreground">Niciun tipar armonic detectat pe {timeframe}</p>
+          </div>
+        )}
       </div>
     </>
   );

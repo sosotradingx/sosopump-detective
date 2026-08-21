@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { fetchTopPairs, fetchKlines, analyzePairsInBatches } from "../components/scanner/binanceApi";
 import { fetchScannerPairs, fetchScannerKlines, DEFAULT_EXCHANGE, exchangeName, EXCHANGES } from "@/lib/exchanges";
 import { analyzePump } from "../components/scanner/pumpEngine";
+import { analyzeHarmonics } from "@/lib/harmonicEngine";
 import ScannerRow from "../components/scanner/ScannerRow";
 import TradingViewModal from "../components/scanner/TradingViewModal";
 import ScannerSettings from "../components/scanner/ScannerSettings";
@@ -10,7 +11,7 @@ import AlertsPanel from "../components/alerts/AlertsPanel";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useVolumeMonitor } from "@/hooks/useVolumeMonitor";
-import { Search, RefreshCw, Loader2, Filter, Download, ArrowUpDown, Settings, Star, Bell, TrendingDown } from "lucide-react";
+import { Search, RefreshCw, Loader2, Filter, Download, ArrowUpDown, Settings, Star, Bell, TrendingDown, Hexagon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -54,6 +55,7 @@ export default function Scanner() {
   const [nearATL, setNearATL] = useState(false);
   const [atlLoading, setAtlLoading] = useState(false);
   const [atlMap, setAtlMap] = useState({});
+  const [harmonics, setHarmonics] = useState(false);
   const [alerts, setAlerts] = useState([]);
   const [showAlerts, setShowAlerts] = useState(false);
   const notifiedRef = useRef(new Set());
@@ -158,7 +160,8 @@ export default function Scanner() {
           ? await fetchScannerKlines(ex, pair.symbol, settings.timeframe, 100)
           : await fetchKlines(pair.symbol, settings.timeframe, 100, false);
         const analysis = analyzePump(klines, settings);
-        const result = { ...pair, exchange: ex, analysis };
+        const harmonic = analyzeHarmonics(klines, "fast");
+        const result = { ...pair, exchange: ex, analysis, harmonic };
 
         // Check for strong pump alerts
         const score = analysis?.totalScore || 0;
@@ -198,13 +201,21 @@ export default function Scanner() {
     return true;
   });
 
+  // Harmonics mode: keep only pairs with a detected pattern, best confidence first.
+  let working = baseFiltered;
+  if (harmonics) {
+    working = working
+      .filter(p => p.harmonic?.best)
+      .sort((a, b) => (b.harmonic.best.conf) - (a.harmonic.best.conf));
+  }
+
   // Near-ATL mode: keep only coins with computed ATL distance, prioritize those closest to ATL.
   const filtered = nearATL
-    ? baseFiltered
+    ? working
         .filter(p => atlMap[p.symbol] != null)
         .map(p => ({ ...p, atlDistancePct: atlMap[p.symbol].distancePct, atl: atlMap[p.symbol].atl }))
         .sort((a, b) => a.atlDistancePct - b.atlDistancePct)
-    : baseFiltered
+    : working
         .sort((a, b) => {
           let va, vb;
           if (sortBy === "score") { va = a.analysis?.totalScore || 0; vb = b.analysis?.totalScore || 0; }
@@ -238,6 +249,7 @@ export default function Scanner() {
             {pairs.length} perechi scanate · {filtered.length} afișate · TF: <span className="text-primary font-mono">{settings.timeframe}</span>
             {settings.marketSource !== "spot" && ` · ${exchangeName(settings.exchange || DEFAULT_EXCHANGE)}`}
             {nearATL && ` · Near ATL ${atlLoading ? "…" : `(${Object.keys(atlMap).length})`}`}
+            {harmonics && ` · 🦋 Harmonics (${filtered.filter(p => p.harmonic?.best).length})`}
             {lastUpdate && ` · ${lastUpdate.toLocaleTimeString("ro-RO")}`}
           </p>
         </div>
@@ -269,6 +281,15 @@ export default function Scanner() {
           >
             {atlLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <TrendingDown className="w-4 h-4 mr-1" />}
             Near ATL
+          </Button>
+          <Button
+            variant="outline" size="sm"
+            className={harmonics ? "border-chart-purple text-chart-purple" : ""}
+            onClick={() => setHarmonics(v => !v)}
+            title="Afișează perechile cu tipare armonnice (Gartley, Bat, Crab, Butterfly, Cypher, Shark, 5-0)"
+          >
+            <Hexagon className="w-4 h-4 mr-1" />
+            Harmonics
           </Button>
           <Button
             variant="outline" size="sm"
@@ -385,6 +406,7 @@ export default function Scanner() {
                 <th className="text-center p-3">RSI</th>
                 <th className="text-center p-3">Market</th>
                 <th className="text-center p-3">Signals</th>
+                {harmonics && <th className="text-center p-3">🦋 Harmonic</th>}
                 {nearATL && <th className="text-right p-3">Dist. ATL</th>}
                 <th className="text-right p-3">Volum 24h</th>
                 <th className="text-center p-3"></th>
@@ -396,6 +418,7 @@ export default function Scanner() {
                   key={pair.symbol}
                   pair={pair}
                   showATL={nearATL}
+                  showHarmonic={harmonics}
                   onSelect={(sym) => { setSelectedSymbol(sym); setSelectedExchange(pair.exchange || DEFAULT_EXCHANGE); }}
                   onRowClick={(p) => setSelectedPair(p)}
                   isFavorite={isFavorite(pair.symbol)}
