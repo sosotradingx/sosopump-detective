@@ -12,7 +12,7 @@ const statusConfig = {
   INACTIVE: { bg: "bg-muted/10",         text: "text-muted-foreground", border: "border-border" },
 };
 
-export default function ScannerRow({ pair, onSelect, onRowClick, isFavorite, onToggleFavorite }) {
+export default function ScannerRow({ pair, onSelect, onRowClick, isFavorite, onToggleFavorite, showATL }) {
   const a = pair.analysis || {};
   const sc = statusConfig[a.pumpStatus] || statusConfig.INACTIVE;
   const positive = pair.priceChangePercent >= 0;
@@ -70,6 +70,19 @@ export default function ScannerRow({ pair, onSelect, onRowClick, isFavorite, onT
           {a.obvDivergence && <span className="text-[9px]" title="OBV Div">📈</span>}
         </div>
       </td>
+      {showATL && (
+        <td className="p-3 text-right font-mono text-xs">
+          {pair.atlDistancePct != null ? (
+            <span className={
+              pair.atlDistancePct <= 2 ? "text-pump-strong font-semibold" :
+              pair.atlDistancePct <= 10 ? "text-chart-blue" :
+              pair.atlDistancePct <= 25 ? "text-chart-gold" : "text-muted-foreground"
+            }>
+              +{pair.atlDistancePct.toFixed(1)}%
+            </span>
+          ) : "-"}
+        </td>
+      )}
       <td className="p-3 text-right font-mono text-xs text-muted-foreground">
         {formatVolume(pair.quoteVolume)}
       </td>

@@ -10,7 +10,7 @@ import AlertsPanel from "../components/alerts/AlertsPanel";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useVolumeMonitor } from "@/hooks/useVolumeMonitor";
-import { Search, RefreshCw, Loader2, Filter, Download, ArrowUpDown, Settings, Star, Bell } from "lucide-react";
+import { Search, RefreshCw, Loader2, Filter, Download, ArrowUpDown, Settings, Star, Bell, TrendingDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -51,6 +51,9 @@ export default function Scanner() {
   const [selectedPair, setSelectedPair] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [nearATL, setNearATL] = useState(false);
+  const [atlLoading, setAtlLoading] = useState(false);
+  const [atlMap, setAtlMap] = useState({});
   const [alerts, setAlerts] = useState([]);
   const [showAlerts, setShowAlerts] = useState(false);
   const notifiedRef = useRef(new Set());
@@ -97,6 +100,43 @@ export default function Scanner() {
     try { localStorage.setItem("soso_scanner_sortdir", sortDir); } catch {}
   }, [sortDir]);
 
+  // Keep a ref so loadData can read the latest nearATL flag without re-running on toggle
+  const nearATLRef = useRef(false);
+  useEffect(() => { nearATLRef.current = nearATL; }, [nearATL]);
+
+  // Compute all-time-low proximity (closest first) using up to 1000 daily candles.
+  const computeATL = useCallback(async (source) => {
+    if (!source || !source.length) return;
+    setAtlLoading(true);
+    const partial = {};
+    await analyzePairsInBatches(
+      source,
+      async (pair) => {
+        const ex = pair.exchange || (settings.exchange || DEFAULT_EXCHANGE);
+        const isPerp = settings.marketSource !== "spot";
+        const daily = isPerp
+          ? await fetchScannerKlines(ex, pair.symbol, "1d", 1000)
+          : await fetchKlines(pair.symbol, "1d", 1000, false);
+        if (daily && daily.length) {
+          let low = Infinity;
+          for (const k of daily) if (k.low < low) low = k.low;
+          const price = pair.price || daily[daily.length - 1].close;
+          if (low > 0 && isFinite(low)) {
+            partial[pair.symbol] = {
+              atl: low,
+              distancePct: ((price - low) / low) * 100,
+            };
+            if (Object.keys(partial).length % 10 === 0) setAtlMap({ ...partial });
+          }
+        }
+        return pair;
+      },
+      10, 250
+    );
+    setAtlMap(partial);
+    setAtlLoading(false);
+  }, [settings]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setProgress(0);
@@ -141,30 +181,39 @@ export default function Scanner() {
 
     setLastUpdate(new Date());
     setLoading(false);
-  }, [settings, notifyStrongPump, addAlert]);
+    // Re-compute ATL proximity if Near-ATL mode is active
+    if (nearATLRef.current) computeATL(analyzed.slice());
+  }, [settings, notifyStrongPump, addAlert, computeATL]);
 
   useEffect(() => {
     loadData();
   }, []);
 
-  const filtered = pairs
-    .filter(p => {
-      if (showFavoritesOnly && !isFavorite(p.symbol)) return false;
-      if (search && !p.symbol.toLowerCase().includes(search.toLowerCase())) return false;
-      if (statusFilter === "active") return p.analysis?.pumpStatus === "STRONG" || p.analysis?.pumpStatus === "ACTIVE";
-      if (statusFilter === "early") return p.analysis?.hasEarlyWarning;
-      if (statusFilter === "strong") return p.analysis?.pumpStatus === "STRONG";
-      return true;
-    })
-    .sort((a, b) => {
-      let va, vb;
-      if (sortBy === "score") { va = a.analysis?.totalScore || 0; vb = b.analysis?.totalScore || 0; }
-      else if (sortBy === "change") { va = a.priceChangePercent; vb = b.priceChangePercent; }
-      else if (sortBy === "volume") { va = a.quoteVolume; vb = b.quoteVolume; }
-      else if (sortBy === "rsi") { va = a.analysis?.rsi || 0; vb = b.analysis?.rsi || 0; }
-      else { va = a.analysis?.totalScore || 0; vb = b.analysis?.totalScore || 0; }
-      return sortDir === "desc" ? vb - va : va - vb;
-    });
+  const baseFiltered = pairs.filter(p => {
+    if (showFavoritesOnly && !isFavorite(p.symbol)) return false;
+    if (search && !p.symbol.toLowerCase().includes(search.toLowerCase())) return false;
+    if (statusFilter === "active") return p.analysis?.pumpStatus === "STRONG" || p.analysis?.pumpStatus === "ACTIVE";
+    if (statusFilter === "early") return p.analysis?.hasEarlyWarning;
+    if (statusFilter === "strong") return p.analysis?.pumpStatus === "STRONG";
+    return true;
+  });
+
+  // Near-ATL mode: keep only coins with computed ATL distance, prioritize those closest to ATL.
+  const filtered = nearATL
+    ? baseFiltered
+        .filter(p => atlMap[p.symbol] != null)
+        .map(p => ({ ...p, atlDistancePct: atlMap[p.symbol].distancePct, atl: atlMap[p.symbol].atl }))
+        .sort((a, b) => a.atlDistancePct - b.atlDistancePct)
+    : baseFiltered
+        .sort((a, b) => {
+          let va, vb;
+          if (sortBy === "score") { va = a.analysis?.totalScore || 0; vb = b.analysis?.totalScore || 0; }
+          else if (sortBy === "change") { va = a.priceChangePercent; vb = b.priceChangePercent; }
+          else if (sortBy === "volume") { va = a.quoteVolume; vb = b.quoteVolume; }
+          else if (sortBy === "rsi") { va = a.analysis?.rsi || 0; vb = b.analysis?.rsi || 0; }
+          else { va = a.analysis?.totalScore || 0; vb = b.analysis?.totalScore || 0; }
+          return sortDir === "desc" ? vb - va : va - vb;
+        });
 
   const exportCSV = () => {
     const headers = "Symbol,Price,Change%,Score,Status,Volume,RSI,Market\n";
@@ -188,6 +237,7 @@ export default function Scanner() {
           <p className="text-sm text-muted-foreground">
             {pairs.length} perechi scanate · {filtered.length} afișate · TF: <span className="text-primary font-mono">{settings.timeframe}</span>
             {settings.marketSource !== "spot" && ` · ${exchangeName(settings.exchange || DEFAULT_EXCHANGE)}`}
+            {nearATL && ` · Near ATL ${atlLoading ? "…" : `(${Object.keys(atlMap).length})`}`}
             {lastUpdate && ` · ${lastUpdate.toLocaleTimeString("ro-RO")}`}
           </p>
         </div>
@@ -207,6 +257,19 @@ export default function Scanner() {
               </SelectContent>
             </Select>
           )}
+          <Button
+            variant="outline" size="sm"
+            className={nearATL ? "border-chart-blue text-chart-blue" : ""}
+            onClick={() => {
+              const next = !nearATL;
+              setNearATL(next);
+              if (next && pairs.length) computeATL(pairs);
+            }}
+            title="Afișează monedele cele mai apropiate de all-time low"
+          >
+            {atlLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <TrendingDown className="w-4 h-4 mr-1" />}
+            Near ATL
+          </Button>
           <Button
             variant="outline" size="sm"
             className={showFavoritesOnly ? "border-chart-gold text-chart-gold" : ""}
@@ -322,6 +385,7 @@ export default function Scanner() {
                 <th className="text-center p-3">RSI</th>
                 <th className="text-center p-3">Market</th>
                 <th className="text-center p-3">Signals</th>
+                {nearATL && <th className="text-right p-3">Dist. ATL</th>}
                 <th className="text-right p-3">Volum 24h</th>
                 <th className="text-center p-3"></th>
               </tr>
@@ -331,6 +395,7 @@ export default function Scanner() {
                 <ScannerRow
                   key={pair.symbol}
                   pair={pair}
+                  showATL={nearATL}
                   onSelect={(sym) => { setSelectedSymbol(sym); setSelectedExchange(pair.exchange || DEFAULT_EXCHANGE); }}
                   onRowClick={(p) => setSelectedPair(p)}
                   isFavorite={isFavorite(pair.symbol)}
