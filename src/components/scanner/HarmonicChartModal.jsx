@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { X, ExternalLink, Loader2, Hexagon } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { X, ExternalLink, Loader2, Hexagon, Maximize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { analyzeHarmonics, PIVOT_PRESETS } from "@/lib/harmonicEngine";
@@ -20,6 +20,12 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
   const [loading, setLoading] = useState(true);
   const [patternIdx, setPatternIdx] = useState(0);
 
+  // Pan / zoom on the time axis (user SVG units).
+  const [zoom, setZoom] = useState(1);     // >1 means zoomed in (narrower visible width)
+  const [panX, setPanX] = useState(0);      // left edge of visible viewBox in user units
+  const svgRef = useRef(null);
+  const dragRef = useRef(null);
+
   const exchange = pair?.exchange || DEFAULT_EXCHANGE;
   const tvPrefix = exchange === "bybit" ? "BYBIT:" : "BINANCE:";
   const tvSuffix = exchange === "bybit" ? ".P" : "";
@@ -29,6 +35,8 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
     let alive = true;
     setLoading(true);
     setKlines(null);
+    setZoom(1);
+    setPanX(0);
     (async () => {
       try {
         const data = await fetchKlinesFn(pair.symbol, tf, 150);
@@ -42,17 +50,18 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
     return () => { alive = false; };
   }, [pair.symbol, tf, fetchKlinesFn]);
 
-  const analysis = useMemo(
-    () => (klines && klines.length > 20 ? analyzeHarmonics(klines, preset) : null),
-    [klines, preset]
-  );
-  const patterns = analysis?.patterns || [];
-  const activePattern = patterns[patternIdx] || patterns[0] || null;
+  // Crash-safe harmonic analysis. With "normal"/"slow" presets the pivot count
+  // may drop below 4 and return no pattern — that must not throw the render.
+  const analysis = useMemo(() => {
+    if (!klines || klines.length < 20) return null;
+    try { return analyzeHarmonics(klines, preset); } catch { return { patterns: [], best: null, pivotCount: 0 }; }
+  }, [klines, preset]);
 
-  // Reset to best pattern when results change.
+  const patterns = analysis?.patterns || [];
+  const activePattern = patterns[Math.min(patternIdx, patterns.length - 1)] || null;
+
   useEffect(() => { setPatternIdx(0); }, [pair.symbol, tf, preset, analysis]);
 
-  // Y-domain: candles + trade levels + PRZ.
   const bounds = useMemo(() => {
     if (!klines || !klines.length) return null;
     let lo = Infinity, hi = -Infinity;
@@ -60,23 +69,76 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
     if (activePattern) {
       const p = activePattern;
       const vals = [p.entry, p.sl, p.tp1, p.tp2, p.tp3, p.przZone.top, p.przZone.bottom, ...Object.values(p.pivots)];
-      for (const v of vals) { if (v < lo) lo = v; if (v > hi) hi = v; }
+      for (const v of vals) { if (isFinite(v) && v < lo) lo = v; if (isFinite(v) && v > hi) hi = v; }
     }
     const pad = (hi - lo) * 0.08 || hi * 0.05;
     return { lo: lo - pad, hi: hi + pad };
   }, [klines, activePattern]);
 
-  const xFor = (i) => PAD_L + (i / Math.max(1, (klines?.length || 1) - 1)) * PLOT_W;
+  const nBars = klines?.length || 1;
+  const xFor = (i) => PAD_L + (i / Math.max(1, nBars - 1)) * PLOT_W;
   const yFor = (price) => bounds ? PAD_T + ((bounds.hi - price) / (bounds.hi - bounds.lo || 1)) * PLOT_H : 0;
 
   const bullish = activePattern?.bullish;
   const lineColor = bullish ? "#26A69A" : "#EF5350";
 
+  // Clamp pan within visible area given current zoom.
+  const clampedPan = (p, z) => {
+    const maxPan = Math.max(0, VW * (1 - 1 / z));
+    return Math.max(0, Math.min(p, maxPan));
+  };
+
+  // Non-passive wheel listener so we can preventDefault for chart zoom.
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      e.preventDefault();
+      setZoom(z => {
+        const factor = e.deltaY < 0 ? 0.88 : 1.12;
+        const maxZoom = Math.max(1, Math.floor(nBars / 6));
+        const nz = Math.max(1, Math.min(z * factor, maxZoom));
+        setPanX(p => clampedPan(p, nz));
+        return nz;
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [nBars]);
+
+  // Drag-to-pan.
+  useEffect(() => {
+    const move = (e) => {
+      if (!dragRef.current) return;
+      const el = svgRef.current;
+      if (!el) return;
+      const containerW = el.getBoundingClientRect().width;
+      if (!containerW) return;
+      const visibleW = VW / dragRef.current.zoom;
+      const dxUser = (e.clientX - dragRef.current.x) * visibleW / containerW;
+      setPanX(p => clampedPan(dragRef.current.panX - dxUser, dragRef.current.zoom));
+    };
+    const up = () => { dragRef.current = null; document.body.style.cursor = ""; };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+  }, []);
+
+  const onMouseDown = (e) => {
+    dragRef.current = { x: e.clientX, panX, zoom };
+    document.body.style.cursor = "grabbing";
+  };
+
+  const resetView = () => { setZoom(1); setPanX(0); };
+  const visibleW = VW / zoom;
+  const viewBox = `${panX} 0 ${visibleW} ${VH}`;
+  const hasData = klines && klines.length >= 20 && bounds;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <div
         className="bg-card border border-border rounded-xl w-full max-w-6xl mx-4 overflow-hidden"
-        style={{ maxHeight: "90vh", height: "90vh" }}
+        style={{ maxHeight: "92vh", height: "92vh" }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -105,15 +167,13 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
         <div className="flex items-center gap-2 px-4 py-2 border-b border-border flex-wrap">
           <div className="flex gap-1">
             {TIMEFRAMES.map(t => (
-              <Button key={t} size="sm" variant={t === tf ? "default" : "outline"} className="h-7 px-2 text-xs"
-                onClick={() => setTf(t)}>{t}</Button>
+              <Button key={t} size="sm" variant={t === tf ? "default" : "outline"} className="h-7 px-2 text-xs" onClick={() => setTf(t)}>{t}</Button>
             ))}
           </div>
           <span className="text-[10px] text-muted-foreground ml-2">Sensibilitate pivots:</span>
           <div className="flex gap-1">
             {Object.keys(PIVOT_PRESETS).map(p => (
-              <Button key={p} size="sm" variant={p === preset ? "secondary" : "ghost"} className="h-7 px-2 text-xs capitalize"
-                onClick={() => setPreset(p)}>{p}</Button>
+              <Button key={p} size="sm" variant={p === preset ? "secondary" : "ghost"} className="h-7 px-2 text-xs capitalize" onClick={() => setPreset(p)}>{p}</Button>
             ))}
           </div>
           {patterns.length > 1 && (
@@ -121,15 +181,17 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
               <span className="text-[10px] text-muted-foreground ml-2">Tipare ({patterns.length}):</span>
               <div className="flex gap-1 flex-wrap">
                 {patterns.map((p, i) => (
-                  <Button key={i} size="sm" variant={i === (patterns[patternIdx] ? patternIdx : 0) ? "secondary" : "ghost"}
-                    className="h-7 px-2 text-[10px]"
-                    onClick={() => setPatternIdx(i)}>
+                  <Button key={i} size="sm" variant={i === patternIdx ? "secondary" : "ghost"} className="h-7 px-2 text-[10px]" onClick={() => setPatternIdx(i)}>
                     {p.bullish ? "▲" : "▼"} {p.name} {p.conf}%
                   </Button>
                 ))}
               </div>
             </>
           )}
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-[10px] text-muted-foreground hidden sm:inline">scroll = zoom · drag = pan</span>
+            <Button variant="outline" size="sm" className="h-7" onClick={resetView} title="Resetează vizualizare"><Maximize2 className="w-3 h-3 mr-1" /> Reset</Button>
+          </div>
         </div>
 
         {/* Chart */}
@@ -139,17 +201,23 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
               <Loader2 className="w-8 h-8 animate-spin" />
               <p className="text-sm">Încărcare klines {pair?.symbol} · {tf}...</p>
             </div>
-          ) : klines.length < 20 ? (
+          ) : !hasData ? (
             <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
               Date insuficiente pe {tf} pentru detecție armonică.
             </div>
           ) : (
             <>
-              <svg viewBox={`0 0 ${VW} ${VH}`} className="w-full" style={{ maxHeight: "62vh" }}>
+              <svg
+                ref={svgRef}
+                viewBox={viewBox}
+                preserveAspectRatio="none"
+                className="w-full"
+                style={{ maxHeight: "62vh", cursor: "grab", touchAction: "none", userSelect: "none" }}
+                onMouseDown={onMouseDown}
+              >
                 {/* Grid */}
                 {[0, 0.25, 0.5, 0.75, 1].map(g => (
-                  <line key={g} x1={PAD_L} x2={PAD_L + PLOT_W}
-                    y1={PAD_T + g * PLOT_H} y2={PAD_T + g * PLOT_H}
+                  <line key={g} x1={PAD_L} x2={PAD_L + PLOT_W} y1={PAD_T + g * PLOT_H} y2={PAD_T + g * PLOT_H}
                     stroke="hsl(222 30% 18%)" strokeDasharray="3 3" />
                 ))}
                 {/* Price axis ticks (right) */}
@@ -157,13 +225,11 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
                   const price = bounds.hi - g * (bounds.hi - bounds.lo);
                   return (
                     <text key={g} x={PAD_L + PLOT_W + 6} y={PAD_T + g * PLOT_H + 3}
-                      fill="hsl(215 20% 55%)" fontSize="10" fontFamily="monospace">
-                      {fmt(price)}
-                    </text>
+                      fill="hsl(215 20% 55%)" fontSize="10" fontFamily="monospace">{fmt(price)}</text>
                   );
                 })}
 
-                {/* PRZ zone band (drawn under candles) */}
+                {/* PRZ zone band */}
                 {activePattern && (() => {
                   const p = activePattern;
                   const dBar = p.bars.bD ?? (klines.length - 1);
@@ -195,7 +261,7 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
                   );
                 })}
 
-                {/* Trade levels (Entry / SL / TP) */}
+                {/* Trade levels */}
                 {activePattern && (() => {
                   const p = activePattern;
                   const lines = [
@@ -210,8 +276,8 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
                     if (y < PAD_T - 2 || y > PAD_T + PLOT_H + 2) return null;
                     return (
                       <g key={idx}>
-                        <line x1={PAD_L} x2={PAD_L + PLOT_W} y1={y} y2={y}
-                          stroke={l.color} strokeWidth={1} strokeDasharray={l.dash} opacity={l.fade ? 0.45 : 0.85} />
+                        <line x1={PAD_L} x2={PAD_L + PLOT_W} y1={y} y2={y} stroke={l.color} strokeWidth={1}
+                          strokeDasharray={l.dash} opacity={l.fade ? 0.45 : 0.85} />
                         <text x={PAD_L + PLOT_W + 6} y={y + 3} fill={l.color} fontSize="9" fontFamily="monospace" opacity="0.9">
                           {l.label} {fmt(l.v)}
                         </text>
@@ -220,7 +286,7 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
                   });
                 })()}
 
-                {/* Harmonic pattern geometry X-A-B-C-D */}
+                {/* Harmonic geometry X-A-B-C-D */}
                 {activePattern && (() => {
                   const p = activePattern;
                   const dBar = p.bars.bD ?? (klines.length - 1 + 2);
@@ -235,7 +301,6 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
                   return (
                     <g>
                       <path d={path} fill="none" stroke={lineColor} strokeWidth={2} opacity={0.9} />
-                      {/* Dashed projection C->D for potential patterns */}
                       {!p.completed && (
                         <path d={`M ${xFor(p.bars.bC).toFixed(1)} ${yFor(p.pivots.C).toFixed(1)} L ${xFor(dBar).toFixed(1)} ${yFor(p.pivots.D).toFixed(1)}`}
                           fill="none" stroke={lineColor} strokeWidth={1.5} strokeDasharray="5 4" opacity={0.6} />
@@ -260,12 +325,12 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
                   <InfoBox label="Entry" value={fmt(activePattern.entry)} color="text-foreground" />
                   <InfoBox label="Stop Loss" value={fmt(activePattern.sl)} color="text-chart-red" />
                   <InfoBox label="TP1 / TP2 / TP3" value={`${fmt(activePattern.tp1)} / ${fmt(activePattern.tp2)} / ${fmt(activePattern.tp3)}`} color="text-chart-green" />
-                  <InfoBox label="R:R (TP2)" value={`1:${activePattern.rr.toFixed(2)}`} color="text-chart-gold" />
+                  <InfoBox label="R:R (TP2)" value={`1:${(activePattern.rr || 0).toFixed(2)}`} color="text-chart-gold" />
                   <InfoBox label="Conf / Fit / PRZ" value={`${activePattern.conf}% / ${Math.round(activePattern.fit)}% / ${Math.round(activePattern.prz)}%`} color="text-chart-gold" />
-                  <InfoBox label="XAB" value={`${activePattern.ratios.rAB.toFixed(3)} ${activePattern.checks.okAB ? "✔" : "✖"}`} color={activePattern.checks.okAB ? "text-chart-green" : "text-muted-foreground"} />
-                  <InfoBox label="ABC" value={`${activePattern.ratios.rBC.toFixed(3)} ${activePattern.checks.okBC ? "✔" : "✖"}`} color={activePattern.checks.okBC ? "text-chart-green" : "text-muted-foreground"} />
-                  <InfoBox label="BCD" value={`${activePattern.ratios.rCD.toFixed(3)} ${activePattern.checks.okCD ? "✔" : "✖"}`} color={activePattern.checks.okCD ? "text-chart-green" : "text-muted-foreground"} />
-                  <InfoBox label="XAD" value={`${activePattern.ratios.rAD.toFixed(3)} ${activePattern.checks.okAD ? "✔" : "✖"}`} color={activePattern.checks.okAD ? "chart-green" : "text-muted-foreground"} />
+                  <InfoBox label="XAB" value={`${(activePattern.ratios.rAB || 0).toFixed(3)} ${activePattern.checks.okAB ? "✔" : "✖"}`} color={activePattern.checks.okAB ? "text-chart-green" : "text-muted-foreground"} />
+                  <InfoBox label="ABC" value={`${(activePattern.ratios.rBC || 0).toFixed(3)} ${activePattern.checks.okBC ? "✔" : "✖"}`} color={activePattern.checks.okBC ? "text-chart-green" : "text-muted-foreground"} />
+                  <InfoBox label="BCD" value={`${(activePattern.ratios.rCD || 0).toFixed(3)} ${activePattern.checks.okCD ? "✔" : "✖"}`} color={activePattern.checks.okCD ? "text-chart-green" : "text-muted-foreground"} />
+                  <InfoBox label="XAD" value={`${(activePattern.ratios.rAD || 0).toFixed(3)} ${activePattern.checks.okAD ? "✔" : "✖"}`} color={activePattern.checks.okAD ? "text-chart-green" : "text-muted-foreground"} />
                 </div>
               )}
             </>
