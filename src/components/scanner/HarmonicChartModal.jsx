@@ -1,15 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { X, ExternalLink, Loader2, Hexagon, Maximize2 } from "lucide-react";
+import { createChart, ColorType, LineStyle, CrosshairMode } from "lightweight-charts";
+import { X, ExternalLink, Loader2, Hexagon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { analyzeHarmonics, PIVOT_PRESETS } from "@/lib/harmonicEngine";
 import { exchangeName, DEFAULT_EXCHANGE } from "@/lib/exchanges";
 
 const TIMEFRAMES = ["15m", "1h", "4h", "1d"];
-const VW = 1000, VH = 560;
-const PAD_L = 8, PAD_R = 70, PAD_T = 16, PAD_B = 28;
-const PLOT_W = VW - PAD_L - PAD_R;
-const PLOT_H = VH - PAD_T - PAD_B;
+const TF_SECONDS = { "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400 };
 
 const fmt = (v) => (v == null || !isFinite(v) ? "—" : v >= 1 ? v.toFixed(4) : v.toPrecision(4));
 
@@ -20,26 +18,25 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
   const [loading, setLoading] = useState(true);
   const [patternIdx, setPatternIdx] = useState(0);
 
-  // Pan / zoom on the time axis (user SVG units).
-  const [zoom, setZoom] = useState(1);     // >1 means zoomed in (narrower visible width)
-  const [panX, setPanX] = useState(0);      // left edge of visible viewBox in user units
-  const svgRef = useRef(null);
-  const dragRef = useRef(null);
+  const containerRef = useRef(null);
+  const chartRef = useRef(null);
+  const candleRef = useRef(null);
+  const harmonicLineRef = useRef(null);
+  const priceLinesRef = useRef([]);
 
   const exchange = pair?.exchange || DEFAULT_EXCHANGE;
   const tvPrefix = exchange === "bybit" ? "BYBIT:" : "BINANCE:";
   const tvSuffix = exchange === "bybit" ? ".P" : "";
   const tvSymbol = `${tvPrefix}${pair?.symbol}${tvSuffix}`;
 
+  // Fetch klines when pair/timeframe changes.
   useEffect(() => {
     let alive = true;
     setLoading(true);
     setKlines(null);
-    setZoom(1);
-    setPanX(0);
     (async () => {
       try {
-        const data = await fetchKlinesFn(pair.symbol, tf, 150);
+        const data = await fetchKlinesFn(pair.symbol, tf, 200);
         if (alive) setKlines(data || []);
       } catch {
         if (alive) setKlines([]);
@@ -50,8 +47,7 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
     return () => { alive = false; };
   }, [pair.symbol, tf, fetchKlinesFn]);
 
-  // Crash-safe harmonic analysis. With "normal"/"slow" presets the pivot count
-  // may drop below 4 and return no pattern — that must not throw the render.
+  // Crash-safe harmonic analysis.
   const analysis = useMemo(() => {
     if (!klines || klines.length < 20) return null;
     try { return analyzeHarmonics(klines, preset); } catch { return { patterns: [], best: null, pivotCount: 0 }; }
@@ -59,85 +55,164 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
 
   const patterns = analysis?.patterns || [];
   const activePattern = patterns[Math.min(patternIdx, patterns.length - 1)] || null;
-
   useEffect(() => { setPatternIdx(0); }, [pair.symbol, tf, preset, analysis]);
-
-  const bounds = useMemo(() => {
-    if (!klines || !klines.length) return null;
-    let lo = Infinity, hi = -Infinity;
-    for (const k of klines) { if (k.low < lo) lo = k.low; if (k.high > hi) hi = k.high; }
-    if (activePattern) {
-      const p = activePattern;
-      const vals = [p.entry, p.sl, p.tp1, p.tp2, p.tp3, p.przZone.top, p.przZone.bottom, ...Object.values(p.pivots)];
-      for (const v of vals) { if (isFinite(v) && v < lo) lo = v; if (isFinite(v) && v > hi) hi = v; }
-    }
-    const pad = (hi - lo) * 0.08 || hi * 0.05;
-    return { lo: lo - pad, hi: hi + pad };
-  }, [klines, activePattern]);
-
-  const nBars = klines?.length || 1;
-  const xFor = (i) => PAD_L + (i / Math.max(1, nBars - 1)) * PLOT_W;
-  const yFor = (price) => bounds ? PAD_T + ((bounds.hi - price) / (bounds.hi - bounds.lo || 1)) * PLOT_H : 0;
 
   const bullish = activePattern?.bullish;
   const lineColor = bullish ? "#26A69A" : "#EF5350";
 
-  // Clamp pan within visible area given current zoom.
-  const clampedPan = (p, z) => {
-    const maxPan = Math.max(0, VW * (1 - 1 / z));
-    return Math.max(0, Math.min(p, maxPan));
-  };
-
-  // Non-passive wheel listener so we can preventDefault for chart zoom.
+  // Create the chart once.
   useEffect(() => {
-    const el = svgRef.current;
-    if (!el) return;
-    const onWheel = (e) => {
-      e.preventDefault();
-      setZoom(z => {
-        const factor = e.deltaY < 0 ? 0.88 : 1.12;
-        const maxZoom = Math.max(1, Math.floor(nBars / 6));
-        const nz = Math.max(1, Math.min(z * factor, maxZoom));
-        setPanX(p => clampedPan(p, nz));
-        return nz;
-      });
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, [nBars]);
+    if (!containerRef.current) return;
+    const chart = createChart(containerRef.current, {
+      layout: {
+        background: { type: ColorType.Solid, color: "#0b0e14" },
+        textColor: "#848e9c",
+        fontFamily: "JetBrains Mono, monospace",
+      },
+      grid: {
+        vertLines: { color: "rgba(255,255,255,0.04)" },
+        horzLines: { color: "rgba(255,255,255,0.04)" },
+      },
+      crosshair: { mode: CrosshairMode.Normal },
+      rightPriceScale: { borderColor: "rgba(255,255,255,0.08)" },
+      timeScale: {
+        borderColor: "rgba(255,255,255,0.08)",
+        timeVisible: true,
+        secondsVisible: false,
+        rightOffset: 6,
+        barSpacing: 8,
+      },
+    });
+    const candle = chart.addCandlestickSeries({
+      upColor: "#26A69A", downColor: "#EF5350",
+      wickUpColor: "#26A69A", wickDownColor: "#EF5350",
+      borderVisible: false,
+    });
+    chartRef.current = chart;
+    candleRef.current = candle;
 
-  // Drag-to-pan.
-  useEffect(() => {
-    const move = (e) => {
-      if (!dragRef.current) return;
-      const el = svgRef.current;
-      if (!el) return;
-      const containerW = el.getBoundingClientRect().width;
-      if (!containerW) return;
-      const visibleW = VW / dragRef.current.zoom;
-      const dxUser = (e.clientX - dragRef.current.x) * visibleW / containerW;
-      setPanX(p => clampedPan(dragRef.current.panX - dxUser, dragRef.current.zoom));
+    const ro = new ResizeObserver(() => {
+      if (containerRef.current && chartRef.current) {
+        chartRef.current.applyOptions({ width: containerRef.current.clientWidth, height: containerRef.current.clientHeight });
+      }
+    });
+    ro.observe(containerRef.current);
+
+    return () => {
+      ro.disconnect();
+      chart.remove();
+      chartRef.current = null;
+      candleRef.current = null;
+      harmonicLineRef.current = null;
+      priceLinesRef.current = [];
     };
-    const up = () => { dragRef.current = null; document.body.style.cursor = ""; };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
-    return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
   }, []);
 
-  const onMouseDown = (e) => {
-    dragRef.current = { x: e.clientX, panX, zoom };
-    document.body.style.cursor = "grabbing";
-  };
+  // Feed candle data.
+  useEffect(() => {
+    const chart = chartRef.current;
+    const candle = candleRef.current;
+    if (!chart || !candle || !klines || !klines.length) return;
+    candle.setData(klines.map(k => ({
+      time: Math.floor(k.time / 1000),
+      open: k.open, high: k.high, low: k.low, close: k.close,
+    })));
+    chart.timeScale().fitContent();
+  }, [klines]);
 
-  const resetView = () => { setZoom(1); setPanX(0); };
-  const visibleW = VW / zoom;
-  const viewBox = `${panX} 0 ${visibleW} ${VH}`;
-  const hasData = klines && klines.length >= 20 && bounds;
+  // (Re)draw harmonic overlay + price lines whenever pattern/klines change.
+  useEffect(() => {
+    const chart = chartRef.current;
+    const candle = candleRef.current;
+    if (!chart || !candle || !klines || !klines.length) return;
+
+    // Clean previous overlay & price lines.
+    if (harmonicLineRef.current) {
+      chart.removeSeries(harmonicLineRef.current);
+      harmonicLineRef.current = null;
+    }
+    priceLinesRef.current.forEach(pl => { try { candle.removePriceLine(pl); } catch {} });
+    priceLinesRef.current = [];
+
+    if (!activePattern) {
+      candle.setMarkers([]);
+      return;
+    }
+
+    const p = activePattern;
+    const intervalSec = TF_SECONDS[tf] || 3600;
+    const lastTime = Math.floor(klines[klines.length - 1].time / 1000);
+
+    // Resolve pivot times (seconds). Projected D for potential patterns.
+    const resolveTime = (bar) => {
+      if (bar == null || bar < 0 || bar >= klines.length) return null;
+      return Math.floor(klines[bar].time / 1000);
+    };
+    const tX = resolveTime(p.bars.bX);
+    const tA = resolveTime(p.bars.bA);
+    const tB = resolveTime(p.bars.bB);
+    const tC = resolveTime(p.bars.bC);
+    const tD = p.completed ? resolveTime(p.bars.bD) : (tC != null ? tC + intervalSec * 2 : lastTime + intervalSec * 2);
+
+    // Pattern polyline series.
+    const linePoints = [
+      { t: tX, v: p.pivots.X, label: "X" },
+      { t: tA, v: p.pivots.A, label: "A" },
+      { t: tB, v: p.pivots.B, label: "B" },
+      { t: tC, v: p.pivots.C, label: "C" },
+      { t: tD, v: p.pivots.D, label: "D" },
+    ].filter(pt => pt.t != null && pt.v != null);
+
+    const lineSeries = chart.addLineSeries({
+      color: lineColor,
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+      pointMarkersVisible: false,
+    });
+    lineSeries.setData(linePoints.map(pt => ({ time: pt.t, value: pt.v })));
+    harmonicLineRef.current = lineSeries;
+
+    // Markers X-A-B-C-D on the candle series (symbol labels).
+    const posHigh = bullish ? "aboveBar" : "belowBar";
+    const posLow = bullish ? "belowBar" : "aboveBar";
+    // Direction alternation: bullish => X(low),A(high),B(low),C(high),D(low). Bear: opposite.
+    const dirSeq = bullish ? [posLow, posHigh, posLow, posHigh, posLow] : [posHigh, posLow, posHigh, posLow, posHigh];
+    const markers = linePoints.map((pt, i) => ({
+      time: pt.t,
+      position: dirSeq[i],
+      color: lineColor,
+      shape: "circle",
+      size: 1,
+      text: pt.label,
+    }));
+    candle.setMarkers(markers);
+
+    // Price lines: PRZ top/bottom, Entry, SL, TP1/TP2/TP3.
+    const addLine = (price, color, title, style, width) => {
+      if (price == null || !isFinite(price)) return;
+      const pl = candle.createPriceLine({
+        price, color, lineWidth: width ?? 1, lineStyle: style ?? LineStyle.Dashed,
+        axisLabelVisible: true, title,
+      });
+      if (pl) priceLinesRef.current.push(pl);
+    };
+    addLine(p.przZone.top, "#9C27B0", "PRZ↑", LineStyle.Dashed, 1);
+    addLine(p.przZone.bottom, "#9C27B0", "PRZ↓", LineStyle.Dashed, 1);
+    addLine(p.entry, "#FFFFFF", "Entry", LineStyle.Dotted, 2);
+    addLine(p.sl, "#EF5350", "SL", LineStyle.Dashed, 1);
+    addLine(p.tp1, "#26A69A", "TP1", LineStyle.Dashed, 1);
+    addLine(p.tp2, "#26A69A", "TP2", LineStyle.Dashed, 1);
+    addLine(p.tp3, "#26A69A", "TP3", LineStyle.LargeDashed, 1);
+  }, [activePattern, klines, tf]);
+
+  const hasData = klines && klines.length >= 20;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="bg-card border border-border rounded-xl w-full max-w-6xl mx-4 overflow-hidden"
+        className="bg-card border border-border rounded-xl w-full max-w-6xl mx-4 overflow-hidden flex flex-col"
         style={{ maxHeight: "92vh", height: "92vh" }}
         onClick={e => e.stopPropagation()}
       >
@@ -188,15 +263,12 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
               </div>
             </>
           )}
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-[10px] text-muted-foreground hidden sm:inline">scroll = zoom · drag = pan</span>
-            <Button variant="outline" size="sm" className="h-7" onClick={resetView} title="Resetează vizualizare"><Maximize2 className="w-3 h-3 mr-1" /> Reset</Button>
-          </div>
+          <span className="ml-auto text-[10px] text-muted-foreground hidden sm:inline">drag = scroll istoric · scroll = zoom</span>
         </div>
 
         {/* Chart */}
-        <div className="flex-1 overflow-auto p-3">
-          {loading || !klines || !bounds ? (
+        <div className="flex-1 relative p-3 min-h-0">
+          {loading || !klines ? (
             <div className="h-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
               <Loader2 className="w-8 h-8 animate-spin" />
               <p className="text-sm">Încărcare klines {pair?.symbol} · {tf}...</p>
@@ -206,136 +278,25 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
               Date insuficiente pe {tf} pentru detecție armonică.
             </div>
           ) : (
-            <>
-              <svg
-                ref={svgRef}
-                viewBox={viewBox}
-                preserveAspectRatio="none"
-                className="w-full"
-                style={{ maxHeight: "62vh", cursor: "grab", touchAction: "none", userSelect: "none" }}
-                onMouseDown={onMouseDown}
-              >
-                {/* Grid */}
-                {[0, 0.25, 0.5, 0.75, 1].map(g => (
-                  <line key={g} x1={PAD_L} x2={PAD_L + PLOT_W} y1={PAD_T + g * PLOT_H} y2={PAD_T + g * PLOT_H}
-                    stroke="hsl(222 30% 18%)" strokeDasharray="3 3" />
-                ))}
-                {/* Price axis ticks (right) */}
-                {[0, 0.25, 0.5, 0.75, 1].map(g => {
-                  const price = bounds.hi - g * (bounds.hi - bounds.lo);
-                  return (
-                    <text key={g} x={PAD_L + PLOT_W + 6} y={PAD_T + g * PLOT_H + 3}
-                      fill="hsl(215 20% 55%)" fontSize="10" fontFamily="monospace">{fmt(price)}</text>
-                  );
-                })}
-
-                {/* PRZ zone band */}
-                {activePattern && (() => {
-                  const p = activePattern;
-                  const dBar = p.bars.bD ?? (klines.length - 1);
-                  const x1 = xFor(dBar);
-                  const x2 = PAD_L + PLOT_W;
-                  const yTop = yFor(Math.max(p.przZone.top, p.przZone.bottom));
-                  const yBot = yFor(Math.min(p.przZone.top, p.przZone.bottom));
-                  return (
-                    <rect x={x1} y={yTop} width={x2 - x1} height={Math.max(yBot - yTop, 2)}
-                      fill="#9C27B0" opacity="0.16" stroke="#9C27B0" strokeOpacity="0.4" strokeDasharray="4 3" />
-                  );
-                })()}
-
-                {/* Candlesticks */}
-                {klines.map((k, i) => {
-                  const x = xFor(i);
-                  const w = Math.max((PLOT_W / klines.length) * 0.7, 1);
-                  const isG = k.close >= k.open;
-                  const c = isG ? "#26A69A" : "#EF5350";
-                  const yH = yFor(k.high), yL = yFor(k.low);
-                  const yO = yFor(k.open), yC = yFor(k.close);
-                  const bodyTop = Math.min(yO, yC);
-                  const bodyH = Math.max(Math.abs(yC - yO), 1);
-                  return (
-                    <g key={i}>
-                      <line x1={x} x2={x} y1={yH} y2={yL} stroke={c} strokeWidth={1} />
-                      <rect x={x - w / 2} y={bodyTop} width={w} height={bodyH} fill={c} />
-                    </g>
-                  );
-                })}
-
-                {/* Trade levels */}
-                {activePattern && (() => {
-                  const p = activePattern;
-                  const lines = [
-                    { v: p.sl, color: "#EF5350", label: "SL", dash: "5 3" },
-                    { v: p.tp1, color: "#26A69A", label: "TP1", dash: "4 3" },
-                    { v: p.tp2, color: "#26A69A", label: "TP2", dash: "4 3" },
-                    { v: p.tp3, color: "#26A69A", label: "TP3", dash: "4 3", fade: true },
-                    { v: p.entry, color: "#FFFFFF", label: "ENTRY", dash: "2 2" },
-                  ];
-                  return lines.map((l, idx) => {
-                    const y = yFor(l.v);
-                    if (y < PAD_T - 2 || y > PAD_T + PLOT_H + 2) return null;
-                    return (
-                      <g key={idx}>
-                        <line x1={PAD_L} x2={PAD_L + PLOT_W} y1={y} y2={y} stroke={l.color} strokeWidth={1}
-                          strokeDasharray={l.dash} opacity={l.fade ? 0.45 : 0.85} />
-                        <text x={PAD_L + PLOT_W + 6} y={y + 3} fill={l.color} fontSize="9" fontFamily="monospace" opacity="0.9">
-                          {l.label} {fmt(l.v)}
-                        </text>
-                      </g>
-                    );
-                  });
-                })()}
-
-                {/* Harmonic geometry X-A-B-C-D */}
-                {activePattern && (() => {
-                  const p = activePattern;
-                  const dBar = p.bars.bD ?? (klines.length - 1 + 2);
-                  const pts = [
-                    { bar: p.bars.bX, price: p.pivots.X, label: "X" },
-                    { bar: p.bars.bA, price: p.pivots.A, label: "A" },
-                    { bar: p.bars.bB, price: p.pivots.B, label: "B" },
-                    { bar: p.bars.bC, price: p.pivots.C, label: "C" },
-                    { bar: dBar, price: p.pivots.D, label: "D" },
-                  ];
-                  const path = pts.map((pt, i) => `${i === 0 ? "M" : "L"} ${xFor(pt.bar).toFixed(1)} ${yFor(pt.price).toFixed(1)}`).join(" ");
-                  return (
-                    <g>
-                      <path d={path} fill="none" stroke={lineColor} strokeWidth={2} opacity={0.9} />
-                      {!p.completed && (
-                        <path d={`M ${xFor(p.bars.bC).toFixed(1)} ${yFor(p.pivots.C).toFixed(1)} L ${xFor(dBar).toFixed(1)} ${yFor(p.pivots.D).toFixed(1)}`}
-                          fill="none" stroke={lineColor} strokeWidth={1.5} strokeDasharray="5 4" opacity={0.6} />
-                      )}
-                      {pts.map((pt, i) => (
-                        <g key={i}>
-                          <circle cx={xFor(pt.bar)} cy={yFor(pt.price)} r={3.5} fill={lineColor} stroke="#0b0e14" strokeWidth={1} />
-                          <text x={xFor(pt.bar)} y={yFor(pt.price) - 7} fill={lineColor} fontSize="10" fontFamily="monospace" fontWeight="bold" textAnchor="middle">
-                            {pt.label}
-                          </text>
-                        </g>
-                      ))}
-                    </g>
-                  );
-                })()}
-              </svg>
-
-              {/* Pattern info footer */}
-              {activePattern && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 mt-3 text-[10px] font-mono">
-                  <InfoBox label="PRZ Zonă" value={`${fmt(activePattern.przZone.bottom)} – ${fmt(activePattern.przZone.top)}`} color="text-chart-purple" />
-                  <InfoBox label="Entry" value={fmt(activePattern.entry)} color="text-foreground" />
-                  <InfoBox label="Stop Loss" value={fmt(activePattern.sl)} color="text-chart-red" />
-                  <InfoBox label="TP1 / TP2 / TP3" value={`${fmt(activePattern.tp1)} / ${fmt(activePattern.tp2)} / ${fmt(activePattern.tp3)}`} color="text-chart-green" />
-                  <InfoBox label="R:R (TP2)" value={`1:${(activePattern.rr || 0).toFixed(2)}`} color="text-chart-gold" />
-                  <InfoBox label="Conf / Fit / PRZ" value={`${activePattern.conf}% / ${Math.round(activePattern.fit)}% / ${Math.round(activePattern.prz)}%`} color="text-chart-gold" />
-                  <InfoBox label="XAB" value={`${(activePattern.ratios.rAB || 0).toFixed(3)} ${activePattern.checks.okAB ? "✔" : "✖"}`} color={activePattern.checks.okAB ? "text-chart-green" : "text-muted-foreground"} />
-                  <InfoBox label="ABC" value={`${(activePattern.ratios.rBC || 0).toFixed(3)} ${activePattern.checks.okBC ? "✔" : "✖"}`} color={activePattern.checks.okBC ? "text-chart-green" : "text-muted-foreground"} />
-                  <InfoBox label="BCD" value={`${(activePattern.ratios.rCD || 0).toFixed(3)} ${activePattern.checks.okCD ? "✔" : "✖"}`} color={activePattern.checks.okCD ? "text-chart-green" : "text-muted-foreground"} />
-                  <InfoBox label="XAD" value={`${(activePattern.ratios.rAD || 0).toFixed(3)} ${activePattern.checks.okAD ? "✔" : "✖"}`} color={activePattern.checks.okAD ? "text-chart-green" : "text-muted-foreground"} />
-                </div>
-              )}
-            </>
+            <div ref={containerRef} className="w-full h-full" />
           )}
         </div>
+
+        {/* Footer info */}
+        {activePattern && hasData && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 px-4 py-2 border-t border-border text-[10px] font-mono">
+            <InfoBox label="PRZ Zonă" value={`${fmt(activePattern.przZone.bottom)} – ${fmt(activePattern.przZone.top)}`} color="text-chart-purple" />
+            <InfoBox label="Entry" value={fmt(activePattern.entry)} color="text-foreground" />
+            <InfoBox label="Stop Loss" value={fmt(activePattern.sl)} color="text-chart-red" />
+            <InfoBox label="TP1 / TP2 / TP3" value={`${fmt(activePattern.tp1)} / ${fmt(activePattern.tp2)} / ${fmt(activePattern.tp3)}`} color="text-chart-green" />
+            <InfoBox label="R:R (TP2)" value={`1:${(activePattern.rr || 0).toFixed(2)}`} color="text-chart-gold" />
+            <InfoBox label="Conf / Fit / PRZ" value={`${activePattern.conf}% / ${Math.round(activePattern.fit)}% / ${Math.round(activePattern.prz)}%`} color="text-chart-gold" />
+            <InfoBox label="XAB" value={`${(activePattern.ratios.rAB || 0).toFixed(3)} ${activePattern.checks.okAB ? "✔" : "✖"}`} color={activePattern.checks.okAB ? "text-chart-green" : "text-muted-foreground"} />
+            <InfoBox label="ABC" value={`${(activePattern.ratios.rBC || 0).toFixed(3)} ${activePattern.checks.okBC ? "✔" : "✖"}`} color={activePattern.checks.okBC ? "text-chart-green" : "text-muted-foreground"} />
+            <InfoBox label="BCD" value={`${(activePattern.ratios.rCD || 0).toFixed(3)} ${activePattern.checks.okCD ? "✔" : "✖"}`} color={activePattern.checks.okCD ? "text-chart-green" : "text-muted-foreground"} />
+            <InfoBox label="XAD" value={`${(activePattern.ratios.rAD || 0).toFixed(3)} ${activePattern.checks.okAD ? "✔" : "✖"}`} color={activePattern.checks.okAD ? "text-chart-green" : "text-muted-foreground"} />
+          </div>
+        )}
       </div>
     </div>
   );
