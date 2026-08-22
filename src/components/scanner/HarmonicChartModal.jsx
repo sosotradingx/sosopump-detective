@@ -268,17 +268,18 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
 
         {/* Chart */}
         <div className="flex-1 relative p-3 min-h-0">
-          {loading || !klines ? (
-            <div className="h-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
+          {/* Container always mounted so the chart instance (created on mount) has a target. */}
+          <div ref={containerRef} className="w-full h-full" />
+          {(loading || !klines) && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground bg-card">
               <Loader2 className="w-8 h-8 animate-spin" />
               <p className="text-sm">Încărcare klines {pair?.symbol} · {tf}...</p>
             </div>
-          ) : !hasData ? (
-            <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+          )}
+          {!loading && klines && !hasData && (
+            <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm bg-card">
               Date insuficiente pe {tf} pentru detecție armonică.
             </div>
-          ) : (
-            <div ref={containerRef} className="w-full h-full" />
           )}
         </div>
 

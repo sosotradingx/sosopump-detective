@@ -12,7 +12,7 @@ import AlertsPanel from "../components/alerts/AlertsPanel";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useVolumeMonitor } from "@/hooks/useVolumeMonitor";
-import { Search, RefreshCw, Loader2, Filter, Download, ArrowUpDown, Settings, Star, Bell, TrendingDown, Hexagon } from "lucide-react";
+import { Search, RefreshCw, Loader2, Filter, Download, ArrowUpDown, Settings, Star, Bell, TrendingDown, Hexagon, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -61,6 +61,7 @@ export default function Scanner() {
   const [alerts, setAlerts] = useState([]);
   const [showAlerts, setShowAlerts] = useState(false);
   const notifiedRef = useRef(new Set());
+  const abortRef = useRef(false);
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
   const { notifyStrongPump, notifyVolumeSpike, permission } = useNotifications();
 
@@ -145,6 +146,7 @@ export default function Scanner() {
     setLoading(true);
     setProgress(0);
     setPairs([]);
+    abortRef.current = false;
 
     const isPerpetual = settings.marketSource !== "spot";
     const exchange = isPerpetual ? (settings.exchange || DEFAULT_EXCHANGE) : DEFAULT_EXCHANGE;
@@ -153,10 +155,11 @@ export default function Scanner() {
       : await fetchTopPairs("USDT", settings.maxPairs || 100, settings.minVolume);
 
     const analyzed = [];
-
-    await analyzePairsInBatches(
-      topPairs,
-      async (pair) => {
+    const BATCH = 25;
+    for (let i = 0; i < topPairs.length; i += BATCH) {
+      if (abortRef.current) break;
+      const chunk = topPairs.slice(i, i + BATCH);
+      const results = await Promise.all(chunk.map(async (pair) => {
         const ex = pair.exchange || exchange;
         const klines = isPerpetual
           ? await fetchScannerKlines(ex, pair.symbol, settings.timeframe, 100)
@@ -165,7 +168,6 @@ export default function Scanner() {
         const harmonic = analyzeHarmonics(klines, "fast");
         const result = { ...pair, exchange: ex, analysis, harmonic };
 
-        // Check for strong pump alerts
         const score = analysis?.totalScore || 0;
         const status = analysis?.pumpStatus;
         const key = `${pair.symbol}-${Math.floor(Date.now() / 300000)}`;
@@ -174,20 +176,17 @@ export default function Scanner() {
           notifyStrongPump(pair.symbol, score);
           addAlert("pump", pair.symbol, `Strong Pump detectat! Scor ${score}/100 · ${status}`);
         }
-
-        analyzed.push(result);
-        setProgress(Math.round((analyzed.length / topPairs.length) * 100));
-        setPairs([...analyzed]);
         return result;
-      },
-      25,  // batch size
-      300, // delay ms between batches
-    );
+      }));
+      analyzed.push(...results.filter(Boolean));
+      setProgress(Math.round((analyzed.length / topPairs.length) * 100));
+      setPairs([...analyzed]);
+      if (i + BATCH < topPairs.length && !abortRef.current) await new Promise(r => setTimeout(r, 300));
+    }
 
     setLastUpdate(new Date());
     setLoading(false);
-    // Re-compute ATL proximity if Near-ATL mode is active
-    if (nearATLRef.current) computeATL(analyzed.slice());
+    if (nearATLRef.current && !abortRef.current) computeATL(analyzed.slice());
   }, [settings, notifyStrongPump, addAlert, computeATL]);
 
   useEffect(() => {
@@ -271,6 +270,24 @@ export default function Scanner() {
               </SelectContent>
             </Select>
           )}
+          <Select
+            value={settings.timeframe}
+            onValueChange={v => setSettings(s => ({ ...s, timeframe: v }))}
+          >
+            <SelectTrigger className="w-16 bg-card">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1m">1m</SelectItem>
+              <SelectItem value="3m">3m</SelectItem>
+              <SelectItem value="5m">5m</SelectItem>
+              <SelectItem value="15m">15m</SelectItem>
+              <SelectItem value="30m">30m</SelectItem>
+              <SelectItem value="1h">1h</SelectItem>
+              <SelectItem value="4h">4h</SelectItem>
+              <SelectItem value="1d">1d</SelectItem>
+            </SelectContent>
+          </Select>
           <Button
             variant="outline" size="sm"
             className={nearATL ? "border-chart-blue text-chart-blue" : ""}
@@ -324,6 +341,16 @@ export default function Scanner() {
             {loading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <RefreshCw className="w-4 h-4 mr-1" />}
             Scanare
           </Button>
+          {loading && (
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => { abortRef.current = true; setLoading(false); setProgress(100); }}
+              title="Opreşte scanarea curentă"
+            >
+              <Square className="w-3 h-3 mr-1" /> Stop
+            </Button>
+          )}
         </div>
       </div>
 
