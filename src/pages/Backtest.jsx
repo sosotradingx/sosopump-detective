@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback } from "react";
 import { fetchPerpetualPairs, fetchKlines, formatPrice, formatVolume } from "../components/scanner/binanceApi";
 import { analyzePump } from "../components/scanner/pumpEngine";
+import { analyzeHarmonics } from "@/lib/harmonicEngine";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,6 +33,11 @@ const DEFAULT_CONFIG = {
   partialTPTarget: 10,
   partialTPPercent: 50,
   moveSlToBreakeven: true,
+  // Harmonic strategy
+  strategy: "pump", // "pump" | "harmonic"
+  harmonicSensitivity: "fast", // fast | normal | slow
+  harmonicMinConf: 10,
+  harmonicTPLevel: 2, // 1=TP1(1R), 2=TP2(2R), 3=TP3(3R)
 };
 
 const TF_BARS = { "15m": 2880, "30m": 1440, "1h": 720, "4h": 180, "1d": 30 };
@@ -189,6 +195,100 @@ function runBacktest(klines, cfg) {
   return trades;
 }
 
+// Harmonic strategy backtest: enters when a completed harmonic pattern is detected,
+// using the pattern's own SL/TP levels. Supports both long (bullish) and short (bearish).
+function runHarmonicBacktest(klines, cfg) {
+  const trades = [];
+  const totalBars = klines.length;
+  const warmup = 60;
+  const preset = cfg.harmonicSensitivity || "fast";
+  const minConf = cfg.harmonicMinConf ?? 40;
+  const tpLevel = cfg.harmonicTPLevel ?? 2;
+  const tpKey = tpLevel === 1 ? "tp1" : tpLevel === 3 ? "tp3" : "tp2";
+
+  let openTrade = null;
+  let pendingEntry = null;
+  let lastPatternD = -1; // bar index of last acted-upon pattern's D pivot
+
+  for (let i = warmup; i < totalBars; i++) {
+    const bar = klines[i];
+
+    // Execute pending entry on the OPEN of bar i (next bar after detection)
+    if (pendingEntry) {
+      openTrade = {
+        entryBar: i,
+        entryTime: bar.time,
+        entryPrice: bar.open,
+        rawEntryPrice: bar.open,
+        stopLoss: pendingEntry.sl,
+        takeProfit: pendingEntry.tp,
+        score: pendingEntry.conf,
+        pumpStatus: pendingEntry.name,
+        dir: pendingEntry.dir,
+      };
+      pendingEntry = null;
+    }
+
+    // Check exit (one trade at a time)
+    if (openTrade) {
+      const high = bar.high;
+      const low = bar.low;
+      const long = openTrade.dir > 0;
+      let exitPrice = null;
+      let exitReason = null;
+
+      if (long) {
+        if (high >= openTrade.takeProfit) { exitPrice = openTrade.takeProfit; exitReason = "take_profit"; }
+        else if (low <= openTrade.stopLoss) { exitPrice = openTrade.stopLoss; exitReason = "stop_loss"; }
+      } else {
+        if (low <= openTrade.takeProfit) { exitPrice = openTrade.takeProfit; exitReason = "take_profit"; }
+        else if (high >= openTrade.stopLoss) { exitPrice = openTrade.stopLoss; exitReason = "stop_loss"; }
+      }
+
+      if (exitPrice) {
+        const rawPnl = (long ? (exitPrice - openTrade.entryPrice) : (openTrade.entryPrice - exitPrice)) / openTrade.entryPrice * 100;
+        const pnlPct = Math.round((rawPnl - COMMISSION_PCT) * 100) / 100;
+        trades.push({
+          ...openTrade,
+          exitBar: i, exitTime: bar.time, exitPrice, exitReason, pnlPct,
+          barsHeld: i - openTrade.entryBar,
+        });
+        openTrade = null;
+      }
+      continue;
+    }
+
+    // Detect completed harmonic pattern (entry will execute on NEXT bar open)
+    if (!pendingEntry) {
+      const slice = klines.slice(0, i + 1);
+      const { patterns } = analyzeHarmonics(slice, preset);
+      // Pick the highest-confidence COMPLETED pattern whose D pivot is newer than the last acted one
+      const comp = patterns
+        .filter(p => p.completed && p.bars && p.bars.bD > lastPatternD && p.conf >= minConf)
+        .sort((a, b) => b.conf - a.conf)[0];
+      if (comp) {
+        lastPatternD = comp.bars.bD;
+        pendingEntry = { sl: comp.sl, tp: comp[tpKey], dir: comp.dir, conf: comp.conf, name: comp.name };
+      }
+    }
+  }
+
+  // Close any remaining open trade at last bar close
+  if (openTrade) {
+    const lastBar = klines[totalBars - 1];
+    const long = openTrade.dir > 0;
+    const rawPnl = (long ? (lastBar.close - openTrade.entryPrice) : (openTrade.entryPrice - lastBar.close)) / openTrade.entryPrice * 100;
+    trades.push({
+      ...openTrade,
+      exitBar: totalBars - 1, exitTime: lastBar.time, exitPrice: lastBar.close,
+      exitReason: "timeout", pnlPct: Math.round((rawPnl - COMMISSION_PCT) * 100) / 100,
+      barsHeld: totalBars - 1 - openTrade.entryBar,
+    });
+  }
+
+  return trades;
+}
+
 export default function Backtest() {
   const [cfg, setCfg] = useState(DEFAULT_CONFIG);
   const [running, setRunning] = useState(false);
@@ -218,7 +318,7 @@ export default function Backtest() {
       const klines = await fetchKlines(pair.symbol, cfg.timeframe, Math.min(totalBars, 1000), true);
       if (klines.length < 60) return;
 
-      const trades = runBacktest(klines, cfg);
+      const trades = cfg.strategy === "harmonic" ? runHarmonicBacktest(klines, cfg) : runBacktest(klines, cfg);
       if (trades.length === 0) return;
 
       // Merge partial_tp + remainder into logical trades for per-symbol stats
@@ -353,7 +453,11 @@ export default function Backtest() {
         <BarChart2 className="w-6 h-6 text-primary" />
         <div>
           <h1 className="text-2xl font-bold">🧪 Backtesting</h1>
-          <p className="text-sm text-muted-foreground">Simulare strategie pump pe date istorice Binance Futures</p>
+          <p className="text-sm text-muted-foreground">
+            {cfg.strategy === "harmonic"
+              ? "Simulare strategie 📐 Harmonic Patterns pe date istorice Binance Futures"
+              : "Simulare strategie 🚀 Pump pe date istorice Binance Futures"}
+          </p>
         </div>
       </div>
 
@@ -364,6 +468,17 @@ export default function Backtest() {
 
           <section className="space-y-3">
             <p className="text-xs text-muted-foreground font-mono border-b border-border pb-1">📊 Parametri Scanare</p>
+
+            <div>
+              <Label className="text-xs text-muted-foreground">Strategie</Label>
+              <Select value={cfg.strategy} onValueChange={v => set("strategy", v)}>
+                <SelectTrigger className="bg-secondary mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pump">🚀 Pump Detection</SelectItem>
+                  <SelectItem value="harmonic">📐 Harmonic Patterns</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
             <div>
               <Label className="text-xs text-muted-foreground">Timeframe</Label>
@@ -392,6 +507,7 @@ export default function Backtest() {
               </Select>
             </div>
 
+            {cfg.strategy === "pump" ? (
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs text-muted-foreground">Scor Minim</Label>
@@ -426,8 +542,43 @@ export default function Backtest() {
                   onChange={e => set("exhaustionRsi", Number(e.target.value))} className="bg-secondary mt-1" />
               </div>
             </div>
+            ) : (
+            <div className="grid grid-cols-1 gap-3">
+              <div>
+                <Label className="text-xs text-muted-foreground">Sensibilitate Pivots</Label>
+                <Select value={cfg.harmonicSensitivity} onValueChange={v => set("harmonicSensitivity", v)}>
+                  <SelectTrigger className="bg-secondary mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="fast">Fast (5/1) — semnale multe</SelectItem>
+                    <SelectItem value="normal">Normal (10/3)</SelectItem>
+                    <SelectItem value="slow">Slow (21/5) — semnale rare</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Confidență Minimă (%)</Label>
+                <Input type="number" min="5" max="90" step="5" value={cfg.harmonicMinConf}
+                  onChange={e => set("harmonicMinConf", Number(e.target.value))} className="bg-secondary mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Ieșire Take-Profit</Label>
+                <Select value={String(cfg.harmonicTPLevel)} onValueChange={v => set("harmonicTPLevel", Number(v))}>
+                  <SelectTrigger className="bg-secondary mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">TP1 (1R — conservator)</SelectItem>
+                    <SelectItem value="2">TP2 (2R — echilibrat)</SelectItem>
+                    <SelectItem value="3">TP3 (3R — agresiv)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-xs text-muted-foreground bg-primary/5 border border-primary/20 rounded p-2">
+                📐 SL/TP provin din structura pattern-ului (D + risk). Long pe bullish, short pe bearish. Comision 0.08% inclus.
+              </p>
+            </div>
+            )}
           </section>
 
+          {cfg.strategy === "pump" && (
           <section className="space-y-3">
             <p className="text-xs text-muted-foreground font-mono border-b border-border pb-1">🎯 Partial Take-Profit (TP1)</p>
             <div className="flex items-center justify-between">
@@ -464,7 +615,9 @@ export default function Backtest() {
               </>
             )}
           </section>
+          )}
 
+          {cfg.strategy === "pump" && (
           <section className="space-y-1">
             <p className="text-xs text-muted-foreground font-mono border-b border-border pb-1">🔬 Filtre Indicatori</p>
             <ToggleRow label="Trend Filter (EMA200)" k="useTrendFilter" />
@@ -475,6 +628,7 @@ export default function Backtest() {
             <ToggleRow label="OBV Divergence" k="useObv" />
             <ToggleRow label="Volume Accumulation" k="useVolAccum" />
           </section>
+          )}
 
           <div className="flex gap-2">
             <Button
@@ -641,7 +795,10 @@ export default function Backtest() {
                         const pnl = Math.round((t.combinedPnl ?? t.pnlPct) * 100) / 100;
                         return (
                           <tr key={i} className="border-b border-border/30 hover:bg-accent/10">
-                            <td className="p-2 font-mono">{t.symbol}</td>
+                            <td className="p-2 font-mono">
+                              {t.dir != null && <span className={t.dir > 0 ? "text-chart-green" : "text-chart-red"}>{t.dir > 0 ? "▲ " : "▼ "}</span>}
+                              {t.symbol}
+                            </td>
                             <td className="p-2 text-center">
                               <span className={`px-1 rounded text-[10px] font-bold ${t.score >= 70 ? "text-pump-strong" : t.score >= 50 ? "text-pump-active" : "text-muted-foreground"}`}>{t.score}</span>
                             </td>
