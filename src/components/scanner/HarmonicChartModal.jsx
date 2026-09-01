@@ -11,6 +11,16 @@ const TF_SECONDS = { "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400 };
 
 const fmt = (v) => (v == null || !isFinite(v) ? "—" : v >= 1 ? v.toFixed(4) : v.toPrecision(4));
 
+// Dynamic decimal precision for the Y-axis based on price magnitude (crypto tick sizes vary wildly).
+const priceDecimals = (p) => {
+  if (!isFinite(p) || p <= 0) return 2;
+  if (p >= 1000) return 2;
+  if (p >= 1) return 4;
+  if (p >= 0.01) return 4;
+  if (p >= 0.0001) return 6;
+  return 8;
+};
+
 export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlinesFn, onClose }) {
   const [tf, setTf] = useState(timeframe);
   const [preset, setPreset] = useState("fast");
@@ -115,6 +125,10 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
     const chart = chartRef.current;
     const candle = candleRef.current;
     if (!chart || !candle || !klines || !klines.length) return;
+    const dec = priceDecimals(klines[klines.length - 1].close);
+    candle.applyOptions({
+      priceFormat: { type: "price", precision: dec, minMove: Math.pow(10, -dec) },
+    });
     candle.setData(klines.map(k => ({
       time: Math.floor(k.time / 1000),
       open: k.open, high: k.high, low: k.low, close: k.close,
