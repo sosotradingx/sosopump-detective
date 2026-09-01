@@ -4,7 +4,7 @@ import { X, ExternalLink, Loader2, Hexagon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { analyzeHarmonics, PIVOT_PRESETS } from "@/lib/harmonicEngine";
-import { exchangeName, DEFAULT_EXCHANGE } from "@/lib/exchanges";
+import { exchangeName, DEFAULT_EXCHANGE, subscribeLiveKlines } from "@/lib/exchanges";
 
 const TIMEFRAMES = ["15m", "1h", "4h", "1d"];
 const TF_SECONDS = { "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400 };
@@ -27,6 +27,7 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
   const [klines, setKlines] = useState(null);
   const [loading, setLoading] = useState(true);
   const [patternIdx, setPatternIdx] = useState(0);
+  const [liveBar, setLiveBar] = useState(null);
 
   const containerRef = useRef(null);
   const chartRef = useRef(null);
@@ -45,6 +46,7 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
     let alive = true;
     setLoading(true);
     setKlines(null);
+    setLiveBar(null);
     (async () => {
       try {
         const data = await fetchKlinesFn(pair.symbol, tf, 200);
@@ -135,6 +137,21 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
     })));
     chart.timeScale().fitContent();
   }, [klines]);
+
+  // Live kline stream: push updates to the candle series + keep curPrice fresh.
+  useEffect(() => {
+    const chart = chartRef.current;
+    const candle = candleRef.current;
+    if (!chart || !candle || !pair?.symbol) return;
+    const isPerp = pair?.isPerpetual !== false;
+    const unsub = subscribeLiveKlines(exchange, pair.symbol, tf, isPerp, (bar) => {
+      setLiveBar(bar);
+      try {
+        candle.update({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close });
+      } catch {}
+    });
+    return unsub;
+  }, [exchange, pair?.symbol, pair?.isPerpetual, tf]);
 
   // (Re)draw harmonic overlay + price lines whenever pattern/klines change.
   useEffect(() => {
@@ -231,7 +248,7 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
   }, [activePattern, klines, tf]);
 
   const hasData = klines && klines.length >= 20;
-  const curPrice = klines && klines.length ? klines[klines.length - 1].close : null;
+  const curPrice = liveBar?.close ?? (klines && klines.length ? klines[klines.length - 1].close : null);
 
   // Trade status: Waiting (D not formed) / Active (in trade) / TP Hit / SL Hit.
   const tradeStatus = useMemo(() => {

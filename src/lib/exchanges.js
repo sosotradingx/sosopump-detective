@@ -99,3 +99,52 @@ export function tradingViewPrefix(exchange) {
 export function exchangeName(exchange) {
   return (EXCHANGES.find(e => e.id === exchange) || EXCHANGES[0]).name;
 }
+
+// Live kline WebSocket subscription for Binance (spot/futures) and Bybit (linear perp).
+// onUpdate receives { time(sec), open, high, low, close, volume, closed }.
+export function subscribeLiveKlines(exchange, symbol, tf, isPerpetual, onUpdate) {
+  let ws = null;
+  let closed = false;
+  try {
+    if (exchange === "bybit") {
+      ws = new WebSocket("wss://stream.bybit.com/v5/public/linear");
+      ws.onopen = () => {
+        if (closed) return;
+        ws.send(JSON.stringify({ op: "subscribe", args: [`kline.${bybitInterval(tf)}.${symbol}`] }));
+      };
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.topic && msg.topic.startsWith("kline.") && Array.isArray(msg.data)) {
+            const k = msg.data[msg.data.length - 1];
+            if (!k) return;
+            onUpdate({
+              time: Math.floor(Number(k.start) / 1000),
+              open: parseFloat(k.open), high: parseFloat(k.high), low: parseFloat(k.low), close: parseFloat(k.close),
+              volume: parseFloat(k.volume), closed: k.confirm === true || k.confirm === "true",
+            });
+          }
+        } catch {}
+      };
+    } else {
+      const base = isPerpetual ? "wss://fstream.binance.com/ws" : "wss://stream.binance.com:9443/ws";
+      ws = new WebSocket(`${base}/${symbol.toLowerCase()}@kline_${tf}`);
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          const k = msg?.k;
+          if (!k) return;
+          onUpdate({
+            time: Math.floor(k.t / 1000),
+            open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c),
+            volume: parseFloat(k.v), closed: !!k.x,
+          });
+        } catch {}
+      };
+    }
+  } catch {}
+  return () => {
+    closed = true;
+    if (ws) { try { ws.close(); } catch {} }
+  };
+}
