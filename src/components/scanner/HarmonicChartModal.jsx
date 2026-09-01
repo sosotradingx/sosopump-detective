@@ -23,6 +23,7 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
   const candleRef = useRef(null);
   const harmonicLineRef = useRef(null);
   const priceLinesRef = useRef([]);
+  const levelSeriesRef = useRef([]);
 
   const exchange = pair?.exchange || DEFAULT_EXCHANGE;
   const tvPrefix = exchange === "bybit" ? "BYBIT:" : "BINANCE:";
@@ -105,6 +106,7 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
       candleRef.current = null;
       harmonicLineRef.current = null;
       priceLinesRef.current = [];
+      levelSeriesRef.current = [];
     };
   }, []);
 
@@ -126,13 +128,15 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
     const candle = candleRef.current;
     if (!chart || !candle || !klines || !klines.length) return;
 
-    // Clean previous overlay & price lines.
+    // Clean previous overlay, price lines & level series.
     if (harmonicLineRef.current) {
       chart.removeSeries(harmonicLineRef.current);
       harmonicLineRef.current = null;
     }
     priceLinesRef.current.forEach(pl => { try { candle.removePriceLine(pl); } catch {} });
     priceLinesRef.current = [];
+    levelSeriesRef.current.forEach(s => { try { chart.removeSeries(s); } catch {} });
+    levelSeriesRef.current = [];
 
     if (!activePattern) {
       candle.setMarkers([]);
@@ -189,25 +193,56 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
     }));
     candle.setMarkers(markers);
 
-    // Price lines: PRZ top/bottom, Entry, SL, TP1/TP2/TP3.
-    const addLine = (price, color, title, style, width) => {
+    // Level lines drawn INTO the chart from the D point (detection / entry) forward,
+    // so they don't span the whole history and don't clutter the right price axis.
+    const endT = lastTime + intervalSec * 10;
+    const startT = tD != null ? tD : lastTime;
+    const addLevelLine = (price, color, style, width) => {
       if (price == null || !isFinite(price)) return;
-      const pl = candle.createPriceLine({
-        price, color, lineWidth: width ?? 1, lineStyle: style ?? LineStyle.Dashed,
-        axisLabelVisible: true, title,
+      const s = chart.addLineSeries({
+        color, lineWidth: width ?? 1, lineStyle: style ?? LineStyle.Dashed,
+        priceLineVisible: false, lastValueVisible: false,
+        crosshairMarkerVisible: false, pointMarkersVisible: false,
       });
-      if (pl) priceLinesRef.current.push(pl);
+      s.setData([{ time: startT, value: price }, { time: endT, value: price }]);
+      levelSeriesRef.current.push(s);
     };
-    addLine(p.przZone.top, "#9C27B0", "PRZ↑", LineStyle.Dashed, 1);
-    addLine(p.przZone.bottom, "#9C27B0", "PRZ↓", LineStyle.Dashed, 1);
-    addLine(p.entry, "#FFFFFF", "Entry", LineStyle.Dotted, 2);
-    addLine(p.sl, "#EF5350", "SL", LineStyle.Dashed, 1);
-    addLine(p.tp1, "#26A69A", "TP1", LineStyle.Dashed, 1);
-    addLine(p.tp2, "#26A69A", "TP2", LineStyle.Dashed, 1);
-    addLine(p.tp3, "#26A69A", "TP3", LineStyle.LargeDashed, 1);
+    addLevelLine(p.przZone.top, "#9C27B0", LineStyle.Dashed, 1);
+    addLevelLine(p.przZone.bottom, "#9C27B0", LineStyle.Dashed, 1);
+    addLevelLine(p.entry, "#FFFFFF", LineStyle.Dotted, 2);
+    addLevelLine(p.sl, "#EF5350", LineStyle.Dashed, 1);
+    addLevelLine(p.tp1, "#26A69A", LineStyle.Dashed, 1);
+    addLevelLine(p.tp2, "#26A69A", LineStyle.Dashed, 1);
+    addLevelLine(p.tp3, "#26A69A", LineStyle.LargeDashed, 1);
   }, [activePattern, klines, tf]);
 
   const hasData = klines && klines.length >= 20;
+  const curPrice = klines && klines.length ? klines[klines.length - 1].close : null;
+
+  // Trade status: Waiting (D not formed) / Active (in trade) / TP Hit / SL Hit.
+  const tradeStatus = useMemo(() => {
+    if (!activePattern || curPrice == null) return null;
+    const p = activePattern;
+    if (!p.completed) return { label: "Waiting", desc: "Aşteaptă formarea punctului D", color: "text-chart-blue", bg: "bg-chart-blue/15", dot: "bg-chart-blue" };
+    const bull = p.bullish;
+    const hitSL = bull ? curPrice <= p.sl : curPrice >= p.sl;
+    const hitTP = bull ? curPrice >= p.tp2 : curPrice <= p.tp2;
+    if (hitSL) return { label: "SL Hit", desc: "Stop-loss atins", color: "text-chart-red", bg: "bg-chart-red/15", dot: "bg-chart-red" };
+    if (hitTP) return { label: "TP Hit", desc: "Target atins", color: "text-chart-green", bg: "bg-chart-green/15", dot: "bg-chart-green" };
+    return { label: "Active", desc: "Tranzacţie activă", color: "text-chart-gold", bg: "bg-chart-gold/15", dot: "bg-chart-gold" };
+  }, [activePattern, curPrice]);
+
+  // Progress bar: SL (0%) → Entry → TP2 (100%), current price marker.
+  const progress = useMemo(() => {
+    if (!activePattern || curPrice == null) return null;
+    const p = activePattern;
+    const span = Math.abs(p.tp2 - p.sl) || 1;
+    const bull = p.bullish;
+    const norm = (v) => bull ? (v - p.sl) / span : (p.sl - v) / span;
+    const posPct = Math.max(0, Math.min(100, norm(curPrice) * 100));
+    const entryPct = Math.max(0, Math.min(100, norm(p.entry) * 100));
+    return { posPct, entryPct };
+  }, [activePattern, curPrice]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
@@ -282,6 +317,26 @@ export default function HarmonicChartModal({ pair, timeframe = "1h", fetchKlines
             </div>
           )}
         </div>
+
+        {/* Trade status + progress bar */}
+        {activePattern && hasData && tradeStatus && progress && (
+          <div className="flex items-center gap-3 px-4 py-2 border-t border-border">
+            <Badge variant="outline" className={`text-[10px] ${tradeStatus.bg} ${tradeStatus.color} border-border/50`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${tradeStatus.dot} mr-1 ${tradeStatus.label === "Active" ? "animate-pulse" : ""}`} />
+              {tradeStatus.label}
+            </Badge>
+            <span className="text-[10px] text-muted-foreground hidden md:inline">{tradeStatus.desc}</span>
+            <div className="flex-1 relative h-2.5 bg-secondary rounded overflow-hidden">
+              <div className="absolute inset-y-0 left-0 bg-chart-red/30" style={{ width: `${progress.entryPct}%` }} />
+              <div className="absolute inset-y-0 bg-chart-green/25" style={{ left: `${progress.entryPct}%`, right: 0 }} />
+              <div className="absolute inset-y-0 w-px bg-white/80" style={{ left: `${progress.entryPct}%` }} />
+              <div className="absolute inset-y-0 w-1.5 bg-primary rounded-sm -ml-0.5" style={{ left: `${progress.posPct}%` }} />
+            </div>
+            <span className="text-[10px] font-mono text-chart-red">SL</span>
+            <span className="text-[10px] font-mono">{fmt(curPrice)}</span>
+            <span className="text-[10px] font-mono text-chart-green">TP2</span>
+          </div>
+        )}
 
         {/* Footer info */}
         {activePattern && hasData && (
