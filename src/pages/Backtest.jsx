@@ -261,7 +261,11 @@ function runHarmonicBacktest(klines, cfg) {
     // Detect completed harmonic pattern (entry will execute on NEXT bar open)
     if (!pendingEntry) {
       const slice = klines.slice(0, i + 1);
-      const { patterns } = analyzeHarmonics(slice, preset);
+      const { patterns, pivotCount } = analyzeHarmonics(slice, preset);
+      if (i === warmup + 50 && totalBars > 200) {
+        const comp0 = patterns.find(p => p.completed);
+        console.log("[HARM DBG]", { sliceLen: slice.length, pivotCount, patternsLen: patterns.length, completedConf: comp0 ? comp0.conf : null, completedName: comp0 ? comp0.name : null, bD: comp0 && comp0.bars ? comp0.bars.bD : null });
+      }
       // Pick the highest-confidence COMPLETED pattern whose D pivot is newer than the last acted one
       const comp = patterns
         .filter(p => p.completed && p.bars && p.bars.bD > lastPatternD && p.conf >= minConf)
