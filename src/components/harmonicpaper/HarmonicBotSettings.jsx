@@ -53,6 +53,9 @@ export default function HarmonicBotSettings({ config, onChange, onClose }) {
               <Select value={local.timeframe || "1h"} onValueChange={v => set("timeframe", v)}>
                 <SelectTrigger className="bg-secondary"><SelectValue /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="1m">1 minut</SelectItem>
+                  <SelectItem value="3m">3 minute</SelectItem>
+                  <SelectItem value="5m">5 minute</SelectItem>
                   <SelectItem value="15m">15 minute</SelectItem>
                   <SelectItem value="30m">30 minute</SelectItem>
                   <SelectItem value="1h">1 oră</SelectItem>
@@ -87,6 +90,7 @@ export default function HarmonicBotSettings({ config, onChange, onClose }) {
                   <SelectItem value="30">Top 30</SelectItem>
                   <SelectItem value="50">Top 50</SelectItem>
                   <SelectItem value="100">Top 100</SelectItem>
+                  <SelectItem value="0">Toate monedele (~400+)</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -94,9 +94,10 @@ export function HarmonicBotProvider({ children }) {
       const user = await base44.auth.me().catch(() => null);
       if (!user) return;
       const isPerp = cfg.marketSource !== "spot";
+      const raw = cfg.scanPairs != null ? cfg.scanPairs : 30; // 0 = toate monedele
       const pairs = isPerp
-        ? await fetchPerpetualPairs(cfg.scanPairs || 30, 500000)
-        : await fetchTopPairs("USDT", cfg.scanPairs || 30, 500000);
+        ? await fetchPerpetualPairs(raw, 500000)
+        : await fetchTopPairs("USDT", raw > 0 ? raw : 9999, 500000);
 
       const existing = await base44.entities.HarmonicSignal.filter({ created_by: user.email }, "-created_date", 2000).catch(() => []);
       const seen = new Set(existing.map(s => `${s.symbol}|${s.d_pivot_time}|${s.pattern_name}`));
