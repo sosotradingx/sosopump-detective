@@ -203,9 +203,12 @@ export function AutoBotProvider({ children }) {
       const cfg = autoConfigRef.current;
       const currentUser = await base44.auth.me().catch(() => null);
       if (!currentUser) return;
-      const allTrades = await base44.entities.PaperTrade.filter({ created_by: currentUser.email }, "-created_date", 5000);
-      const freshOpen = allTrades.filter(t => t.status === "open");
-      const freshClosed = allTrades.filter(t => t.status === "closed");
+      // Citiri reduse: doar pozițiile deschise (max 200) + ultimele închise (max 500).
+      // Înainte se cereau 5000 de înregistrări per scanare → limita de trafic de citire era depășită.
+      const [freshOpen, freshClosed] = await Promise.all([
+        base44.entities.PaperTrade.filter({ created_by: currentUser.email, status: "open" }, "-created_date", 200),
+        base44.entities.PaperTrade.filter({ created_by: currentUser.email, status: "closed" }, "-created_date", 500),
+      ]);
       const openSymbols = new Set(freshOpen.map(t => t.symbol));
 
       const isPerpetual = cfg.marketSource !== "spot";
@@ -286,9 +289,7 @@ export function AutoBotProvider({ children }) {
               log(`🚫 Capital insuficient pentru ${pair.symbol}: $${runningBalance.toFixed(2)} disponibil`);
               break outer;
             }
-            const dupCheck = await base44.entities.PaperTrade.filter({ created_by: currentUser.email, symbol: pair.symbol, status: "open" }, "-created_date", 1);
-            if (dupCheck.length > 0) { openSymbols.add(pair.symbol); continue; }
-
+            // dedup prin openSymbols (construit din freshOpen + actualizat la fiecare deschidere)
             const price = priceMap[pair.symbol] || pair.price;
             const precisionFactor = price < 0.001 ? 1e10 : price < 0.01 ? 1e8 : price < 1 ? 1e6 : 1e4;
             const quantity = Math.floor((cfg.tradeSize / price) * 1000) / 1000;
