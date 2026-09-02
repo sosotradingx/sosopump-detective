@@ -1,0 +1,136 @@
+{
+  "name": "HarmonicSignal",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Pereche (ex: BTCUSDT)"
+    },
+    "pattern_name": {
+      "type": "string",
+      "description": "GARTLEY / BAT / CRAB / AB=CD ..."
+    },
+    "side": {
+      "type": "string",
+      "enum": [
+        "BUY",
+        "SELL"
+      ],
+      "default": "BUY",
+      "description": "Directia tranzactiei: BUY bullish, SELL bearish"
+    },
+    "dir": {
+      "type": "number",
+      "description": "1 bullish, -1 bearish"
+    },
+    "entry": {
+      "type": "number",
+      "description": "Pretul de intrare (punctul D / PRZ)"
+    },
+    "sl": {
+      "type": "number",
+      "description": "Stop loss"
+    },
+    "tp1": {
+      "type": "number",
+      "description": "Take profit 1 (1R)"
+    },
+    "tp2": {
+      "type": "number",
+      "description": "Take profit 2 (2R)"
+    },
+    "tp3": {
+      "type": "number",
+      "description": "Take profit 3 (3R)"
+    },
+    "prz_top": {
+      "type": "number",
+      "description": "Limita superioara zona PRZ"
+    },
+    "prz_bottom": {
+      "type": "number",
+      "description": "Limita inferioara zona PRZ"
+    },
+    "d_pivot_time": {
+      "type": "string",
+      "description": "Timpul ISO al candle-ului D (cheie dedup)"
+    },
+    "timeframe": {
+      "type": "string"
+    },
+    "conf": {
+      "type": "number",
+      "description": "Confidenta pattern (0-100)"
+    },
+    "grade": {
+      "type": "string"
+    },
+    "rr": {
+      "type": "number",
+      "description": "Risk:Reward ratio"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "triggered",
+        "expired",
+        "invalidated"
+      ],
+      "default": "pending",
+      "description": "pending = asteapta intrare in PRZ; triggered = tranzactie deschisa; invalidated = SL atins inainte de intrare; expired = expirat fara trigger"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "symbol",
+    "pattern_name",
+    "entry",
+    "sl",
+    "d_pivot_time",
+    "status"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "$or": [
+        {
+          "created_by": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "created_by": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

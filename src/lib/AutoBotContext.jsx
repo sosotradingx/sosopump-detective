@@ -113,6 +113,8 @@ export function AutoBotProvider({ children }) {
       for (const trade of openTrades) {
         const cur = livePrice[trade.symbol];
         if (!cur || !trade.entry_price) continue;
+        // Tranzactiile harmonice sunt gestionate de HarmonicBotContext (SL/TP direction-aware).
+        if (trade.notes && trade.notes.startsWith("HARM")) continue;
         const pnlPct = ((cur - trade.entry_price) / trade.entry_price) * 100;
 
         let reason = null;

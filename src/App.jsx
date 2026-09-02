@@ -21,6 +21,8 @@ import ResetPassword from './pages/ResetPassword.jsx';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import { AutoBotProvider } from '@/lib/AutoBotContext';
+import { HarmonicBotProvider } from '@/lib/HarmonicBotContext';
+import HarmonicPaperTrading from './pages/HarmonicPaperTrading.jsx';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -62,6 +64,7 @@ const AuthenticatedApp = () => {
   // să continue să scaneze chiar dacă utilizatorul navighează pe altă pagină.
   return (
     <AutoBotProvider>
+    <HarmonicBotProvider>
     <Routes>
       <Route path="/" element={<Landing />} />
       {Object.entries(Pages).map(([path, Page]) => (
@@ -83,6 +86,7 @@ const AuthenticatedApp = () => {
       <Route path="/Pricing" element={<LayoutWrapper currentPageName="Pricing"><Pricing /></LayoutWrapper>} />
       <Route path="/AdminSubscriptions" element={<LayoutWrapper currentPageName="AdminSubscriptions"><AdminSubscriptions /></LayoutWrapper>} />
       <Route path="/AlertSettings" element={<LayoutWrapper currentPageName="AlertSettings"><AlertSettings /></LayoutWrapper>} />
+      <Route path="/HarmonicPaperTrading" element={<LayoutWrapper currentPageName="HarmonicPaperTrading"><HarmonicPaperTrading /></LayoutWrapper>} />
       <Route path="/bot-monitor" element={<LayoutWrapper currentPageName="BotMonitor"><BotMonitor /></LayoutWrapper>} />
       <Route path="/landing" element={<Landing />} />
       <Route path="/login" element={<Login />} />
@@ -92,6 +96,7 @@ const AuthenticatedApp = () => {
       <Route path="/Dashboard" element={<LayoutWrapper currentPageName="Dashboard"><MainPage /></LayoutWrapper>} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
+    </HarmonicBotProvider>
     </AutoBotProvider>
   );
 };
