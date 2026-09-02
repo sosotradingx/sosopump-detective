@@ -205,7 +205,7 @@ export function HarmonicBotProvider({ children }) {
 
       // 2) Entries + invalidation for pending signals
       const lockedCapital = openAll.reduce((s, t) => s + (t.entry_price || 0) * (t.quantity || 0), 0);
-      const availableBalance = (cfg.initialBalance || 10000) + realizedPnLRef.current - lockedCapital;
+      let availableBalance = (cfg.initialBalance || 10000) + realizedPnLRef.current - lockedCapital;
 
       for (const sig of pending) {
         const cur = priceMap[sig.symbol];
@@ -232,6 +232,7 @@ export function HarmonicBotProvider({ children }) {
           await base44.entities.HarmonicSignal.update(sig.id, { status: "triggered" });
           openSymbols.add(sig.symbol);
           currentOpen++;
+          availableBalance -= (cfg.tradeSize ?? 200); // scade capitalul alocat, altfel balanța nu se actualizează și se deschid tranzacții peste capital
           log(`✅ OPEN ${sig.side} ${sig.symbol} @ ${cur} | ${sig.pattern_name} conf${sig.conf} | SL ${sig.sl} TP ${tpLevel}`);
           changed = true;
         }
