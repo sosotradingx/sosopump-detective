@@ -219,6 +219,13 @@ export function HarmonicBotProvider({ children }) {
         }
         const inZone = cur >= sig.prz_bottom && cur <= sig.prz_top;
         if (inZone && !openSymbols.has(sig.symbol) && currentOpen < (cfg.maxOpenTrades ?? 5) && availableBalance >= (cfg.tradeSize ?? 200)) {
+          // Re-verificare proaspătă: nu deschide dacă există deja o tranzacție deschisă pe acest simbol
+          // (protecție suplimentară împotriva duplicatelor între tab-uri/origin diferite sau read-lag).
+          const dup = await base44.entities.PaperTrade.filter({ created_by: user.email, symbol: sig.symbol, status: "open" }, "-created_date", 10).catch(() => []);
+          if (dup.length > 0) {
+            openSymbols.add(sig.symbol);
+            continue;
+          }
           const tpKey = cfg.exitTP || "tp2";
           const tpLevel = sig[tpKey] ?? sig.tp2;
           const quantity = Math.floor((cfg.tradeSize / cur) * 1000) / 1000;
@@ -250,11 +257,24 @@ export function HarmonicBotProvider({ children }) {
   }, [log, refreshLists, queryClient]);
 
   // Monitor loop - always on (protects open harmonic positions even when scan disabled)
+  // Web Lock serializează monitorul între tab-uri/ferestre pe același origin, ca să nu
+  // deschidă două instanțe simultan tranzacții duplicate pe aceeași monedă.
   useEffect(() => {
     let cancelled = false;
     const loop = async () => {
       if (cancelled) return;
-      await checkHarmonicMonitor();
+      const doMonitor = () => checkHarmonicMonitor();
+      if (navigator.locks?.request) {
+        try {
+          await navigator.locks.request("soso-harmonic-monitor", { mode: "exclusive", ifAvailable: true }, async (lock) => {
+            if (lock) await doMonitor();
+          });
+        } catch {
+          await doMonitor();
+        }
+      } else {
+        await doMonitor();
+      }
       const intervalMs = activityRef.current ? 15000 : 30000;
       monitorTimerRef.current = setTimeout(loop, intervalMs);
     };
