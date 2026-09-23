@@ -302,11 +302,11 @@ export default function HarmonicPaperTrading() {
         )}
       </div>
 
-      {/* Closed 24h */}
-      {last24hClosed.length > 0 && (
+      {/* Closed history (all-time) */}
+      {harmonicClosed.length > 0 && (
         <div className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="p-4 border-b border-border">
-            <h3 className="text-sm font-semibold">📜 Istoric 24h ({last24hClosed.length})</h3>
+            <h3 className="text-sm font-semibold">📜 Istoric Tranzacții ({harmonicClosed.length})</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -321,7 +321,7 @@ export default function HarmonicPaperTrading() {
                 </tr>
               </thead>
               <tbody>
-                {last24hClosed.slice(0, 50).map(trade => {
+                {harmonicClosed.slice(0, 100).map(trade => {
                   const isBuy = trade.side === "BUY";
                   return (
                     <tr key={trade.id} className="border-b border-border/50">
