@@ -95,9 +95,22 @@ export function HarmonicBotProvider({ children }) {
       if (!user) return;
       const isPerp = cfg.marketSource !== "spot";
       const raw = cfg.scanPairs != null ? cfg.scanPairs : 30; // 0 = toate monedele
-      const pairs = isPerp
-        ? await fetchPerpetualPairs(raw, 500000)
-        : await fetchTopPairs("USDT", raw > 0 ? raw : 9999, 500000);
+      const fetchPairs = () => isPerp
+        ? fetchPerpetualPairs(raw, 500000)
+        : fetchTopPairs("USDT", raw > 0 ? raw : 9999, 500000);
+      // Reîncercare: Binance poate răspunde gol la 429/transient — fără retry scanul dă "0 perechi"
+      let pairs = [];
+      for (let attempt = 1; attempt <= 3 && pairs.length === 0; attempt++) {
+        pairs = await fetchPairs();
+        if (pairs.length === 0) {
+          log(`⚠️ Scan: 0 perechi de la Binance (încercarea ${attempt}/3)${attempt < 3 ? " · reîncerc..." : ""}`);
+          if (attempt < 3) await new Promise(r => setTimeout(r, 1500));
+        }
+      }
+      if (pairs.length === 0) {
+        log(`❌ Scan abandonat: Binance inaccesibil (429/region/offline). Verifică conexiunea sau schimbă sursa în Setări.`);
+        return;
+      }
 
       const existing = await base44.entities.HarmonicSignal.filter({ created_by: user.email }, "-created_date", 2000).catch(() => []);
       const seen = new Set(existing.map(s => `${s.symbol}|${s.d_pivot_time}|${s.pattern_name}`));
