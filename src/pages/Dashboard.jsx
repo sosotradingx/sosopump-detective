@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { fetchTopPairs, fetchKlines } from "../components/scanner/binanceApi";
+import { fetchScannerPairs, fetchScannerKlines, exchangeName } from "@/lib/exchanges";
 import { analyzePump } from "../components/scanner/pumpEngine";
 import StatsCard from "../components/dashboard/StatsCard";
 import TopPumpsTable from "../components/dashboard/TopPumpsTable";
@@ -16,10 +16,11 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [topPair, setTopPair] = useState(null);
+  const [exchange, setExchange] = useState("binance");
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const topPairs = await fetchTopPairs("USDT", 30, 1000000);
+    const topPairs = await fetchScannerPairs(exchange, 30, 1000000);
 
     // Analyze top 15 pairs with klines
     const analyzed = [];
@@ -30,7 +31,7 @@ export default function Dashboard() {
       const chunk = batch.slice(i, i + 5);
       const results = await Promise.all(
         chunk.map(async (pair) => {
-          const klines = await fetchKlines(pair.symbol, "1h", 100);
+          const klines = await fetchScannerKlines(exchange, pair.symbol, "1h", 100);
           const analysis = analyzePump(klines);
           return { ...pair, analysis };
         })
@@ -47,7 +48,7 @@ export default function Dashboard() {
     setTopPair(best);
     setLastUpdate(new Date());
     setLoading(false);
-  }, []);
+  }, [exchange]);
 
   useEffect(() => {
     loadData();
@@ -69,9 +70,7 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <span className="text-primary">🔥</span> Dashboard
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">Monitorizare în timp real · Binance Futures
-
-          </p>
+          <p className="text-sm text-muted-foreground mt-1">Monitorizare în timp real · {exchangeName(exchange)}</p>
         </div>
         <div className="flex items-center gap-3">
           {lastUpdate &&
@@ -129,6 +128,9 @@ export default function Dashboard() {
         <div className="lg:col-span-2">
           <TopPumpsTable
             data={pairs.filter((p) => p.analysis)}
+            exchange={exchange}
+            onExchangeChange={setExchange}
+            loading={loading}
             onSelectPair={(symbol) => navigate(createPageUrl("PairDetail") + `?symbol=${symbol}`)} />
           
         </div>
