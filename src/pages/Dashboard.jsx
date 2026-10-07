@@ -20,15 +20,14 @@ export default function Dashboard() {
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const topPairs = await fetchScannerPairs(exchange, 30, 1000000);
+    const topPairs = await fetchScannerPairs(exchange, 50, 1000000);
 
-    // Analyze top 15 pairs with klines
+    // Analyze all fetched pairs with klines
     const analyzed = [];
-    const batch = topPairs.slice(0, 15);
 
     // Process in parallel batches of 5
-    for (let i = 0; i < batch.length; i += 5) {
-      const chunk = batch.slice(i, i + 5);
+    for (let i = 0; i < topPairs.length; i += 5) {
+      const chunk = topPairs.slice(i, i + 5);
       const results = await Promise.all(
         chunk.map(async (pair) => {
           const klines = await fetchScannerKlines(exchange, pair.symbol, "1h", 100);
@@ -39,10 +38,7 @@ export default function Dashboard() {
       analyzed.push(...results);
     }
 
-    // Add remaining pairs without analysis
-    const remaining = topPairs.slice(15).map((p) => ({ ...p, analysis: null }));
-
-    setPairs([...analyzed, ...remaining]);
+    setPairs(analyzed);
 
     const best = analyzed.sort((a, b) => (b.analysis?.totalScore || 0) - (a.analysis?.totalScore || 0))[0];
     setTopPair(best);
@@ -96,7 +92,7 @@ export default function Dashboard() {
         <StatsCard
           title="Perechi Scanate"
           value={pairs.filter((p) => p.analysis).length}
-          subtitle="din top 30 volum"
+          subtitle="din top 50 volum"
           icon={BarChart3}
           color="text-chart-blue" />
         
