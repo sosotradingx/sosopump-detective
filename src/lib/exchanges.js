@@ -2,7 +2,7 @@
 // Currently supports Binance (Futures/Spot, via binanceApi) and Bybit (linear perpetuals).
 // Trading & bot logic remain on Binance — these helpers are scanner-view only.
 
-import { fetchPerpetualPairs, fetchKlines } from "@/components/scanner/binanceApi";
+import { fetchPerpetualPairs, fetchKlines, fetchOrderBook } from "@/components/scanner/binanceApi";
 
 export const EXCHANGES = [
   { id: "binance", name: "Binance", label: "Binance Futures", market: "perpetuals" },
@@ -89,6 +89,41 @@ export async function fetchScannerPairs(exchange, limit, minVolume) {
 export async function fetchScannerKlines(exchange, symbol, tf, limit) {
   if (exchange === "bybit") return bybitKlines(symbol, tf, limit);
   return fetchKlines(symbol, tf, limit, true);
+}
+
+// --- Bybit order book (linear perpetual) ---
+async function bybitOrderBook(symbol, limit) {
+  try {
+    const res = await fetch(
+      `https://api.bybit.com/v5/market/orderbook?category=linear&symbol=${symbol}&limit=${limit}`
+    );
+    const json = await res.json();
+    const r = json?.result;
+    if (!r) return { bids: [], asks: [] };
+    return { bids: r.b || r.bids || [], asks: r.a || r.asks || [] };
+  } catch {
+    return { bids: [], asks: [] };
+  }
+}
+
+// Scanner order book (normalized { bids, asks } as [price, qty] pairs).
+export async function fetchScannerOrderBook(exchange, symbol, limit = 10) {
+  if (exchange === "bybit") return bybitOrderBook(symbol, limit);
+  return fetchOrderBook(symbol, limit);
+}
+
+// Persisted exchange preference (shared across Scanner/Dashboard/PairDetail).
+const EXCHANGE_KEY = "soso_preferred_exchange";
+export function getPreferredExchange() {
+  try {
+    const v = localStorage.getItem(EXCHANGE_KEY);
+    return EXCHANGES.some(e => e.id === v) ? v : DEFAULT_EXCHANGE;
+  } catch {
+    return DEFAULT_EXCHANGE;
+  }
+}
+export function setPreferredExchange(exchange) {
+  try { localStorage.setItem(EXCHANGE_KEY, exchange); } catch {}
 }
 
 // TradingView prefix for an exchange (perp funding tickers).

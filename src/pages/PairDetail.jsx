@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { fetchKlines, fetchOrderBook, fetchTopPairs, formatPrice, formatVolume } from "../components/scanner/binanceApi";
+import { fetchScannerPairs, fetchScannerKlines, fetchScannerOrderBook, getPreferredExchange } from "@/lib/exchanges";
+import { formatPrice } from "../components/scanner/binanceApi";
 import { analyzePump } from "../components/scanner/pumpEngine";
 import CandleChart from "../components/chart/CandleChart";
 import IndicatorPanel from "../components/chart/IndicatorPanel";
@@ -13,6 +14,7 @@ import { createPageUrl } from "@/utils";
 
 export default function PairDetail() {
   const urlParams = new URLSearchParams(window.location.search);
+  const exchange = urlParams.get("exchange") || getPreferredExchange();
   const [symbol, setSymbol] = useState(urlParams.get("symbol") || "BTCUSDT");
   const [availablePairs, setAvailablePairs] = useState([]);
 
@@ -23,14 +25,14 @@ export default function PairDetail() {
   const [orderBook, setOrderBook] = useState(null);
 
   useEffect(() => {
-    fetchTopPairs("USDT", 80, 100000).then(pairs => setAvailablePairs(pairs.map(p => p.symbol)));
-  }, []);
+    fetchScannerPairs(exchange, 80, 100000).then(pairs => setAvailablePairs(pairs.map(p => p.symbol)));
+  }, [exchange]);
 
   const loadData = async () => {
     setLoading(true);
     const [kl, ob] = await Promise.all([
-      fetchKlines(symbol, timeframe, 100),
-      fetchOrderBook(symbol, 10)
+      fetchScannerKlines(exchange, symbol, timeframe, 100),
+      fetchScannerOrderBook(exchange, symbol, 10)
     ]);
     setKlines(kl);
     setOrderBook(ob);
@@ -43,7 +45,7 @@ export default function PairDetail() {
     loadData();
     const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
-  }, [symbol, timeframe]);
+  }, [symbol, timeframe, exchange]);
 
   const lastPrice = klines.length > 0 ? klines[klines.length - 1].close : 0;
 

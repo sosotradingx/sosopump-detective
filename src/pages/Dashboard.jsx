@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { fetchScannerPairs, fetchScannerKlines, exchangeName } from "@/lib/exchanges";
+import { fetchScannerPairs, fetchScannerKlines, exchangeName, getPreferredExchange, setPreferredExchange } from "@/lib/exchanges";
 import { analyzePump } from "../components/scanner/pumpEngine";
 import StatsCard from "../components/dashboard/StatsCard";
 import TopPumpsTable from "../components/dashboard/TopPumpsTable";
@@ -16,7 +16,12 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [topPair, setTopPair] = useState(null);
-  const [exchange, setExchange] = useState("binance");
+  const [exchange, setExchange] = useState(getPreferredExchange);
+
+  const handleExchangeChange = useCallback((id) => {
+    setPreferredExchange(id);
+    setExchange(id);
+  }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -125,9 +130,9 @@ export default function Dashboard() {
           <TopPumpsTable
             data={pairs.filter((p) => p.analysis)}
             exchange={exchange}
-            onExchangeChange={setExchange}
+            onExchangeChange={handleExchangeChange}
             loading={loading}
-            onSelectPair={(symbol) => navigate(createPageUrl("PairDetail") + `?symbol=${symbol}`)} />
+            onSelectPair={(symbol) => navigate(createPageUrl("PairDetail") + `?symbol=${symbol}&exchange=${exchange}`)} />
           
         </div>
         <div className="space-y-4">
