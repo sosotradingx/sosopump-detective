@@ -1,0 +1,134 @@
+{
+  "name": "PumpSignalLog",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Pereche (ex: BTCUSDT)"
+    },
+    "exchange": {
+      "type": "string",
+      "enum": [
+        "binance",
+        "bybit"
+      ],
+      "default": "binance"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "WATCH",
+        "EARLY",
+        "ACTIVE",
+        "STRONG",
+        "DUMP_RISK",
+        "INVALIDATED",
+        "CLOSED"
+      ],
+      "default": "WATCH",
+      "description": "Starea semnalului in cascada multi-timeframe"
+    },
+    "strength": {
+      "type": "number",
+      "description": "Pump Strength 0-100 (cat de agresiva e miscarea)"
+    },
+    "manipulation": {
+      "type": "number",
+      "description": "Manipulation Probability 0-100 (cat de artificiala pare)"
+    },
+    "score": {
+      "type": "number",
+      "description": "Scorul clasic al motorului 1h (0-100)"
+    },
+    "price": {
+      "type": "number",
+      "description": "Pretul la momentul semnalului"
+    },
+    "price_change_24h": {
+      "type": "number"
+    },
+    "timeframe": {
+      "type": "string",
+      "default": "mtf",
+      "description": "5m trigger / 15m confirmare / 1h-4h context"
+    },
+    "reasons": {
+      "type": "string",
+      "description": "Semnalele care au declansat statusul"
+    },
+    "peak_price": {
+      "type": "number",
+      "description": "Maximul urmarit dupa semnal (pentru max profit)"
+    },
+    "trough_price": {
+      "type": "number",
+      "description": "Minimul urmarit dupa semnal (pentru max drawdown)"
+    },
+    "outcome_1h": {
+      "type": "number",
+      "description": "Rezultat % la +1h"
+    },
+    "outcome_4h": {
+      "type": "number",
+      "description": "Rezultat % la +4h"
+    },
+    "outcome_24h": {
+      "type": "number",
+      "description": "Rezultat % la +24h"
+    },
+    "max_profit_pct": {
+      "type": "number"
+    },
+    "max_drawdown_pct": {
+      "type": "number"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "symbol",
+    "status"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "$or": [
+        {
+          "created_by": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "created_by": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

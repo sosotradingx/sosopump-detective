@@ -9,6 +9,10 @@ const statusColors = {
   ACTIVE: "bg-pump-active/20 text-pump-active border-pump-active/30",
   WEAK: "bg-pump-weak/20 text-pump-weak border-pump-weak/30",
   EARLY: "bg-pump-early/20 text-pump-early border-pump-early/30",
+  WATCH: "bg-chart-blue/20 text-chart-blue border-chart-blue/30",
+  DUMP_RISK: "bg-destructive/20 text-destructive border-destructive/30",
+  INVALIDATED: "bg-secondary text-muted-foreground border-border",
+  CLOSED: "bg-secondary text-muted-foreground border-border",
   INACTIVE: "bg-pump-inactive/20 text-pump-inactive border-pump-inactive/30",
 };
 
@@ -55,17 +59,17 @@ export default function TopPumpsTable({ data, exchange = "binance", onExchangeCh
                 <th className="text-left p-3 font-medium">Pereche</th>
                 <th className="text-right p-3 font-medium">Preț</th>
                 <th className="text-right p-3 font-medium">24h %</th>
-                <th className="text-right p-3 font-medium">Score</th>
+                <th className="text-right p-3 font-medium">Strength</th>
+                <th className="text-right p-3 font-medium">Manip %</th>
                 <th className="text-center p-3 font-medium">Status</th>
                 <th className="text-right p-3 font-medium">Volum</th>
               </tr>
             </thead>
             <tbody>
               {[...data]
-                .sort((a, b) => (b.analysis?.totalScore || 0) - (a.analysis?.totalScore || 0))
-                .slice(0, 10)
+                .sort((a, b) => (b.strength ?? b.analysis?.totalScore ?? 0) - (a.strength ?? a.analysis?.totalScore ?? 0))
+                .slice(0, 12)
                 .map((item) => {
-                  const a = item.analysis || {};
                   const positive = item.priceChangePercent >= 0;
                   return (
                     <tr
@@ -75,10 +79,13 @@ export default function TopPumpsTable({ data, exchange = "binance", onExchangeCh
                     >
                       <td className="p-3">
                         <div className="flex items-center gap-2">
-                          <span className="text-lg">{a.pumpEmoji || "⚫"}</span>
+                          <span className="text-lg">{item.emoji || item.analysis?.pumpEmoji || "⚫"}</span>
                           <div>
-                            <p className="font-semibold font-mono">{item.symbol.replace("USDT", "")}</p>
-                            <p className="text-[10px] text-muted-foreground">/ USDT</p>
+                            <p className="font-semibold font-mono flex items-center gap-1">
+                              {item.symbol.replace("USDT", "")}
+                              {item.isClimber && <span className="text-[9px] text-chart-gold font-normal">↑rank</span>}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground">/ USDT · {item.base?.marketRegime || item.analysis?.marketRegime || "—"}</p>
                           </div>
                         </div>
                       </td>
@@ -91,16 +98,22 @@ export default function TopPumpsTable({ data, exchange = "binance", onExchangeCh
                       </td>
                       <td className="p-3 text-right">
                         <span className={`font-mono font-bold text-lg ${
-                          a.totalScore >= 70 ? "text-pump-strong" :
-                          a.totalScore >= 40 ? "text-pump-active" :
-                          a.totalScore >= 20 ? "text-pump-weak" : "text-muted-foreground"
+                          (item.strength ?? 0) >= 70 ? "text-pump-strong" :
+                          (item.strength ?? 0) >= 45 ? "text-pump-active" :
+                          (item.strength ?? 0) >= 20 ? "text-pump-weak" : "text-muted-foreground"
                         }`}>
-                          {a.totalScore || 0}
+                          {item.strength ?? 0}
                         </span>
                       </td>
+                      <td className={`p-3 text-right font-mono text-xs ${
+                        (item.manipulation ?? 0) >= 60 ? "text-destructive" :
+                        (item.manipulation ?? 0) >= 35 ? "text-pump-active" : "text-muted-foreground"
+                      }`}>
+                        {item.manipulation != null ? `${item.manipulation}%` : "—"}
+                      </td>
                       <td className="p-3 text-center">
-                        <Badge className={`text-[10px] ${statusColors[a.pumpStatus] || statusColors.INACTIVE}`}>
-                          {a.pumpStatus || "INACTIVE"}
+                        <Badge className={`text-[10px] ${statusColors[item.status] || statusColors.INACTIVE}`}>
+                          {item.status || "INACTIVE"}
                         </Badge>
                       </td>
                       <td className="p-3 text-right font-mono text-xs text-muted-foreground">

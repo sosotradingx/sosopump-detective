@@ -85,7 +85,8 @@ export async function fetchKlines(symbol, interval = "1h", limit = 100, isPerpet
     volume: parseFloat(k[5]),
     closeTime: k[6],
     quoteVolume: parseFloat(k[7]),
-    trades: parseInt(k[8])
+    trades: parseInt(k[8]),
+    takerBuy: parseFloat(k[9]) || 0
   }));
 }
 

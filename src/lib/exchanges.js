@@ -3,6 +3,7 @@
 // Trading & bot logic remain on Binance — these helpers are scanner-view only.
 
 import { fetchPerpetualPairs, fetchKlines, fetchOrderBook } from "@/components/scanner/binanceApi";
+import { isStablecoin } from "@/lib/marketMetrics";
 
 export const EXCHANGES = [
   { id: "binance", name: "Binance", label: "Binance Futures", market: "perpetuals" },
@@ -89,6 +90,36 @@ export async function fetchScannerPairs(exchange, limit, minVolume) {
 export async function fetchScannerKlines(exchange, symbol, tf, limit) {
   if (exchange === "bybit") return bybitKlines(symbol, tf, limit);
   return fetchKlines(symbol, tf, limit, true);
+}
+
+// --- Two-tier universe: top pairs by volume + "climbers" that jumped in the
+// 24h volume ranking (catches low-cap coins starting to move before they hit the top).
+const RANK_KEY = "soso_volume_rank";
+export async function buildUniverse(exchange, { deepLimit = 50, scanLimit = 200, minVolume = 1000000, minRankJump = 20 } = {}) {
+  const all = await fetchScannerPairs(exchange, scanLimit, minVolume);
+  if (!all.length) return { universe: [], climbers: [], scanned: 0 };
+
+  const deep = all.slice(0, deepLimit);
+  const ranks = {};
+  all.forEach((p, i) => { ranks[p.symbol] = i + 1; });
+
+  let prev = null;
+  try { prev = JSON.parse(localStorage.getItem(`${RANK_KEY}_${exchange}`) || "null"); } catch { prev = null; }
+  try { localStorage.setItem(`${RANK_KEY}_${exchange}`, JSON.stringify(ranks)); } catch {}
+
+  const climbers = [];
+  if (prev) {
+    all.forEach(p => {
+      const before = prev[p.symbol];
+      if (before && before - ranks[p.symbol] >= minRankJump) climbers.push(p);
+    });
+  }
+
+  const seen = new Set(deep.map(p => p.symbol));
+  const extra = climbers.filter(p => !seen.has(p.symbol)).slice(0, 20);
+  const universe = [...deep, ...extra].filter(p => !isStablecoin(p.symbol));
+
+  return { universe, climbers: extra, scanned: all.length };
 }
 
 // --- Bybit order book (linear perpetual) ---
