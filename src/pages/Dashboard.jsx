@@ -5,10 +5,14 @@ import { fetchScannerKlines, fetchScannerOrderBook, exchangeName, getPreferredEx
 import { analyzePump, microMetrics, scoreSignal, triggerFlags, resolveStatus, legacyStatus } from "@/lib/pumpAdvanced";
 import { fetchDerivatives, orderBookImbalance, fetchBtcContext } from "@/lib/marketMetrics";
 import { syncSignals } from "@/lib/signalLog";
+import { createLiquidationFeed } from "@/lib/liquidations";
+import { pushSignalAlerts } from "@/lib/notify";
 import StatsCard from "@/components/dashboard/StatsCard";
 import TopPumpsTable from "@/components/dashboard/TopPumpsTable";
 import ScoreBreakdown from "@/components/dashboard/ScoreBreakdown";
 import TopSignalCard from "@/components/dashboard/TopSignalCard";
+import LiquidationPanel from "@/components/dashboard/LiquidationPanel";
+import AlertToggle from "@/components/dashboard/AlertToggle";
 import { Activity, TrendingUp, Zap, BarChart3, RefreshCw, Loader2, Skull, Eye, ShieldAlert, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -25,6 +29,7 @@ export default function Dashboard() {
   const [exchange, setExchange] = useState(getPreferredExchange);
   const [universeInfo, setUniverseInfo] = useState({ scanned: 0, climbers: 0 });
   const [logStats, setLogStats] = useState(null);
+  const [liq, setLiq] = useState(null);
 
   const handleExchangeChange = useCallback((id) => {
     setPreferredExchange(id);
@@ -132,6 +137,9 @@ export default function Dashboard() {
     } catch {
       // logging is best-effort: a traffic/RLS limit must never break the scan
     }
+
+    // Alertă instant (sunet + notificare desktop) la semnale puternice noi
+    pushSignalAlerts(signals, { exchange });
   }, [exchange]);
 
   useEffect(() => {
@@ -139,6 +147,13 @@ export default function Dashboard() {
     const interval = setInterval(loadData, 120000); // cascadă completă la 2 min
     return () => clearInterval(interval);
   }, [loadData]);
+
+  // Flux de lichidări live: Binance = toată piața, Bybit = perechile scanate
+  const liqKey = exchange === "bybit" ? pairs.slice(0, 30).map(p => p.symbol).sort().join(",") : "";
+  useEffect(() => {
+    setLiq(null);
+    return createLiquidationFeed(exchange, liqKey ? liqKey.split(",") : [], setLiq);
+  }, [exchange, liqKey]);
 
   const activePumps = pairs.filter(p => p.status === "STRONG" || p.status === "ACTIVE").length;
   const earlyWarnings = pairs.filter(p => p.status === "EARLY").length;
@@ -167,6 +182,7 @@ export default function Dashboard() {
               Actualizat: {lastUpdate.toLocaleTimeString("ro-RO")}
             </span>
           }
+          <AlertToggle />
           <Button
             variant="outline"
             size="sm"
@@ -246,9 +262,11 @@ export default function Dashboard() {
             exchange={exchange}
             onExchangeChange={handleExchangeChange}
             loading={loading}
+            liq={liq?.bySymbol}
             onSelectPair={(symbol) => navigate(createPageUrl("PairDetail") + `?symbol=${symbol}&exchange=${exchange}`)} />
         </div>
         <div className="space-y-4">
+          <LiquidationPanel liq={liq} exchange={exchange} />
           {topPair &&
             <>
               <TopSignalCard item={topPair} />

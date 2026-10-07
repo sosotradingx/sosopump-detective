@@ -7,6 +7,7 @@ import CandleChart from "../components/chart/CandleChart";
 import IndicatorPanel from "../components/chart/IndicatorPanel";
 import ScoreBreakdown from "../components/dashboard/ScoreBreakdown";
 import AdvancedPanel from "../components/detail/AdvancedPanel";
+import CrossExchangePanel from "../components/detail/CrossExchangePanel";
 import { Loader2, RefreshCw, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -224,6 +225,7 @@ export default function PairDetail() {
                 <IndicatorPanel analysis={analysis} />
               </>
             )}
+            <CrossExchangePanel symbol={symbol} />
             {adv && (
               <div className="hidden lg:block">
                 <AdvancedPanel {...adv} base={adv.base} />

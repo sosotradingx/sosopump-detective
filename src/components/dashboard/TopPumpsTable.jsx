@@ -2,7 +2,7 @@ import React from "react";
 import { formatPrice, formatVolume } from "../scanner/binanceApi";
 import { EXCHANGES } from "@/lib/exchanges";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpRight, ArrowDownRight, Loader2 } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, Loader2, Flame } from "lucide-react";
 
 const statusColors = {
   STRONG: "bg-pump-strong/20 text-pump-strong border-pump-strong/30",
@@ -36,7 +36,7 @@ function ExchangeSelector({ exchange, onExchangeChange }) {
   );
 }
 
-export default function TopPumpsTable({ data, exchange = "binance", onExchangeChange, loading, onSelectPair }) {
+export default function TopPumpsTable({ data, exchange = "binance", onExchangeChange, loading, onSelectPair, liq }) {
   const empty = !data || data.length === 0;
 
   return (
@@ -61,6 +61,7 @@ export default function TopPumpsTable({ data, exchange = "binance", onExchangeCh
                 <th className="text-right p-3 font-medium">24h %</th>
                 <th className="text-right p-3 font-medium">Strength</th>
                 <th className="text-right p-3 font-medium">Manip %</th>
+                <th className="text-right p-3 font-medium">Liq 5m</th>
                 <th className="text-center p-3 font-medium">Status</th>
                 <th className="text-right p-3 font-medium">Volum</th>
               </tr>
@@ -110,6 +111,22 @@ export default function TopPumpsTable({ data, exchange = "binance", onExchangeCh
                         (item.manipulation ?? 0) >= 35 ? "text-pump-active" : "text-muted-foreground"
                       }`}>
                         {item.manipulation != null ? `${item.manipulation}%` : "—"}
+                      </td>
+                      <td className="p-3 text-right font-mono text-xs">
+                        {(() => {
+                          const l = liq?.[item.symbol];
+                          const total = l ? l.long5 + l.short5 : 0;
+                          if (!total) return <span className="text-muted-foreground">—</span>;
+                          const lead = l.short5 > l.long5 * 2.5 && l.short5 > 250000 ? "short"
+                            : l.long5 > l.short5 * 2.5 && l.long5 > 250000 ? "long" : null;
+                          return (
+                            <span
+                              title={`long $${formatVolume(l.long5)} · short $${formatVolume(l.short5)}`}
+                              className={`inline-flex items-center gap-1 ${lead === "short" ? "text-chart-green" : lead === "long" ? "text-destructive" : "text-muted-foreground"}`}>
+                              {lead && <Flame className="w-3 h-3" />}${formatVolume(total)}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="p-3 text-center">
                         <Badge className={`text-[10px] ${statusColors[item.status] || statusColors.INACTIVE}`}>
