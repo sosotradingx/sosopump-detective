@@ -7,6 +7,7 @@ import { fetchDerivatives, orderBookImbalance, fetchBtcContext } from "@/lib/mar
 import { syncSignals } from "@/lib/signalLog";
 import { createLiquidationFeed } from "@/lib/liquidations";
 import { pushSignalAlerts } from "@/lib/notify";
+import { publishWatchSignals } from "@/lib/watchSignals";
 import StatsCard from "@/components/dashboard/StatsCard";
 import TopPumpsTable from "@/components/dashboard/TopPumpsTable";
 import ScoreBreakdown from "@/components/dashboard/ScoreBreakdown";
@@ -140,6 +141,9 @@ export default function Dashboard() {
 
     // Alertă instant (sunet + notificare desktop) la semnale puternice noi
     pushSignalAlerts(signals, { exchange });
+
+    // WATCH (doar 5m) → publicat pentru botul de paper trading, ca intrare timpurie
+    publishWatchSignals(merged.filter(p => p.status === "WATCH"), exchange);
   }, [exchange]);
 
   useEffect(() => {
@@ -228,7 +232,7 @@ export default function Dashboard() {
         <StatsCard
           title="Watch (doar 5m)"
           value={watchList}
-          subtitle="netranzacționabil"
+          subtitle="intrare timpurie în bot"
           icon={Eye}
           color="text-chart-blue" />
 

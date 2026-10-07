@@ -4,6 +4,7 @@ import { base44 } from "@/api/base44Client";
 import { fetchTopPairs, fetchPerpetualPairs, fetchKlines } from "@/components/scanner/binanceApi";
 import { analyzePump } from "@/components/scanner/pumpEngine";
 import { analyzeVVF, getVVFApproval } from "@/components/scanner/vvfEngine";
+import { getWatchSignals } from "@/lib/watchSignals";
 
 const DEFAULT_AUTO_CONFIG = {
   minScore: 70,
@@ -310,6 +311,39 @@ export function AutoBotProvider({ children }) {
         }
         if (bi + BATCH < candidates.length) await new Promise(r => setTimeout(r, 300));
       }
+
+      // === INTRĂRI TIMPURII: semnale WATCH (doar 5m) publicate de Dashboard ===
+      // Primul trigger de 5m, fără confirmare pe 15m: se intră doar cu capitalul rămas
+      // după semnalele confirmate, max 2 pe ciclu, blocat la manipulare ridicată.
+      let earlyOpened = 0;
+      for (const w of getWatchSignals()) {
+        if (earlyOpened >= 2) break;
+        if (freshOpen.length + opened + earlyOpened >= cfg.maxOpenTrades) break;
+        if (runningBalance < cfg.tradeSize) break;
+        if (openSymbols.has(w.symbol)) continue;
+        if (lastClosedMap[w.symbol] && (now - lastClosedMap[w.symbol]) < cooldownMs) continue;
+        if ((w.manipulation ?? 0) >= 60) {
+          log(`⛔ EARLY BLOCKED ${w.symbol} | manipulare ${w.manipulation}%`);
+          continue;
+        }
+        const price = priceMap[w.symbol] || w.price;
+        if (!price) continue;
+        const pf = price < 0.001 ? 1e10 : price < 0.01 ? 1e8 : price < 1 ? 1e6 : 1e4;
+        await base44.entities.PaperTrade.create({
+          symbol: w.symbol, side: "BUY", status: "open",
+          entry_price: price,
+          quantity: Math.floor((cfg.tradeSize / price) * 1000) / 1000,
+          stop_loss: Math.round(price * (1 - cfg.stopLossPct / 100) * pf) / pf,
+          take_profit: Math.round(price * (1 + cfg.takeProfitPct / 100) * pf) / pf,
+          pump_score_at_entry: w.strength,
+          notes: `Auto-EARLY (WATCH 5m) | Strength:${w.strength} | Manip:${w.manipulation ?? "—"}%`,
+        });
+        openSymbols.add(w.symbol);
+        runningBalance -= cfg.tradeSize;
+        earlyOpened++;
+        log(`⚡ EARLY WATCH ${w.symbol} | Strength ${w.strength} | Manip ${w.manipulation ?? "—"}% | Balanță rămasă: $${runningBalance.toFixed(2)}`);
+      }
+      opened += earlyOpened;
 
       if (opened === 0) {
         log(`🔍 Scan complet (${scanned}/${candidates.length} analizate) · Scor minim: ${cfg.minScore} · Top scor găsit: ${topScore}${topSymbol ? ` pe ${topSymbol}` : ""} · ${topScore < cfg.minScore ? `Încearcă scor minim ≤ ${topScore}` : "Semnal dispărut"}`);
