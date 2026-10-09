@@ -16,6 +16,10 @@ import LiquidationPanel from "@/components/dashboard/LiquidationPanel";
 import AlertToggle from "@/components/dashboard/AlertToggle";
 import MarketContextCard from "@/components/dashboard/MarketContextCard";
 import MoversPanel from "@/components/dashboard/MoversPanel";
+import FlowFactorsPanel from "@/components/dashboard/FlowFactorsPanel";
+import RiskPanel from "@/components/dashboard/RiskPanel";
+import { useRiskGuard } from "@/hooks/useRiskGuard";
+import { base44 } from "@/api/base44Client";
 import { Activity, TrendingUp, Zap, BarChart3, RefreshCw, Loader2, Skull, Eye, ShieldAlert, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -35,6 +39,10 @@ export default function Dashboard() {
   const [marketCtx, setMarketCtx] = useState(null);
   const [logStats, setLogStats] = useState(null);
   const [liq, setLiq] = useState(null);
+  const [user, setUser] = useState(null);
+
+  useEffect(() => { base44.auth.me().then(setUser).catch(() => {}); }, []);
+  const { risk } = useRiskGuard(user?.email);
 
   const handleExchangeChange = useCallback((id) => {
     setPreferredExchange(id);
@@ -104,7 +112,7 @@ export default function Dashboard() {
         });
         const reasons = [...sig.dumpFactors, ...sig.manipReasons.slice(0, 2), ...sig.reasons].slice(0, 6).join(" · ");
         return {
-          ...p, deriv, book, sig, mtf: { b5, b15, b4, m5, m15, m4, trigger: t.trigger, confirm: c.confirm },
+          ...p, deriv, book, ob, sig, mtf: { b5, b15, b4, m5, m15, m4, trigger: t.trigger, confirm: c.confirm },
           status: st.status, emoji: st.emoji, strength: sig.strength, manipulation: sig.manipulation, reasons,
         };
       }));
@@ -266,7 +274,7 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 min-w-0">
           <TopPumpsTable
             data={pairs}
             exchange={exchange}
@@ -275,7 +283,7 @@ export default function Dashboard() {
             liq={liq?.bySymbol}
             onSelectPair={(symbol) => navigate(createPageUrl("PairDetail") + `?symbol=${symbol}&exchange=${exchange}`)} />
         </div>
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           <MarketContextCard
             btcCtx={marketCtx?.btcCtx}
             breadthPct={marketCtx?.breadthPct}
@@ -283,9 +291,11 @@ export default function Dashboard() {
             climbers={climbers}
             onSelectSymbol={(symbol) => navigate(createPageUrl("PairDetail") + `?symbol=${symbol}&exchange=${exchange}`)} />
           <LiquidationPanel liq={liq} exchange={exchange} />
+          <RiskPanel risk={risk} item={topPair} />
           {topPair &&
             <>
               <TopSignalCard item={topPair} />
+              <FlowFactorsPanel item={topPair} liq={liq} />
               {topPair.base && <ScoreBreakdown analysis={topPair.base} />}
             </>
           }

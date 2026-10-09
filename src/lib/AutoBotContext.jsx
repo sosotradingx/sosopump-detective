@@ -5,6 +5,7 @@ import { fetchTopPairs, fetchPerpetualPairs, fetchKlines } from "@/components/sc
 import { analyzePump } from "@/components/scanner/pumpEngine";
 import { analyzeVVF, getVVFApproval } from "@/components/scanner/vvfEngine";
 import { getWatchSignals } from "@/lib/watchSignals";
+import { computeRiskState, atrSizing } from "@/lib/riskFactors";
 
 const DEFAULT_AUTO_CONFIG = {
   minScore: 70,
@@ -30,6 +31,8 @@ const DEFAULT_AUTO_CONFIG = {
   vvfBlockManipulation: true,
   vvfBlockLiquidityHeat: true,
   vvfBlockVulnerability: true,
+  useAtrSizing: false,
+  riskPerTradePct: 1,
 };
 
 function loadAutoConfig() {
@@ -213,6 +216,7 @@ export function AutoBotProvider({ children }) {
         base44.entities.PaperTrade.filter({ created_by: currentUser.email, status: "open" }, "-created_date", 200),
         base44.entities.PaperTrade.aggregate({
           query: { created_by: currentUser.email, status: "closed" },
+          dateBucket: { field: "updated_date", unit: "day" },
           sum: ["pnl_usd"],
         }).catch(() => null),
         base44.entities.PaperTrade.filter({
@@ -222,6 +226,16 @@ export function AutoBotProvider({ children }) {
       ]);
       const freshClosed = Array.isArray(recentClosed) ? recentClosed : [];
       const openSymbols = new Set(freshOpen.map(t => t.symbol));
+      const dailyRows = closedAgg?.rows || [];
+
+      // === KILL-SWITCH (protecție): fără poziții noi când riscul e depășit ===
+      // Pierdere zilnică peste limită, serie de pierderi consecutive sau drawdown mare din vârf.
+      const risk = computeRiskState({ dailyRows, recentClosed: freshClosed, openTrades: freshOpen });
+      if (risk.blocked) {
+        log(`🛑 KILL-SWITCH: ${risk.reasons.join(" · ")} — fără poziții noi`);
+        queryClient.invalidateQueries({ queryKey: ["paper-trades"] });
+        return;
+      }
 
       const isPerpetual = cfg.marketSource !== "spot";
       const pairs = isPerpetual
@@ -231,7 +245,7 @@ export function AutoBotProvider({ children }) {
       pairs.forEach(p => { priceMap[p.symbol] = p.price; });
 
       const INITIAL_BALANCE = 10000;
-      const realizedPnL = closedAgg?.rows?.[0]?.sum_pnl_usd || 0;
+      const realizedPnL = dailyRows.reduce((s, r) => s + (Number(r.sum_pnl_usd) || 0), 0);
       const lockedCapital = freshOpen.reduce((s, t) => s + (t.entry_price * t.quantity), 0);
       const availableBalance = INITIAL_BALANCE + realizedPnL - lockedCapital;
 
@@ -302,8 +316,17 @@ export function AutoBotProvider({ children }) {
             }
             // dedup prin openSymbols (construit din freshOpen + actualizat la fiecare deschidere)
             const price = priceMap[pair.symbol] || pair.price;
+            // Sizing pe volatilitate (opțional): risc fix pe tranzacție, stop = 1.5 × ATR,
+            // limitat la 0.5×–1.5× valoarea configurată ca să rămână previzibil.
+            const atr = atrSizing({
+              atrPct: analysis.atrPercent, balance: runningBalance,
+              riskPerTradePct: cfg.riskPerTradePct ?? 1,
+            });
+            const tradeSize = cfg.useAtrSizing && atr
+              ? Math.min(Math.max(atr.notional, cfg.tradeSize * 0.5), cfg.tradeSize * 1.5)
+              : cfg.tradeSize;
             const precisionFactor = price < 0.001 ? 1e10 : price < 0.01 ? 1e8 : price < 1 ? 1e6 : 1e4;
-            const quantity = Math.floor((cfg.tradeSize / price) * 1000) / 1000;
+            const quantity = Math.floor((tradeSize / price) * 1000) / 1000;
             const stopLoss = Math.round(price * (1 - cfg.stopLossPct / 100) * precisionFactor) / precisionFactor;
             const takeProfit = Math.round(price * (1 + cfg.takeProfitPct / 100) * precisionFactor) / precisionFactor;
 
@@ -311,11 +334,11 @@ export function AutoBotProvider({ children }) {
               symbol: pair.symbol, side: "BUY", status: "open",
               entry_price: price, quantity, stop_loss: stopLoss, take_profit: takeProfit,
               pump_score_at_entry: analysis.totalScore,
-              notes: `Auto | TF:${cfg.timeframe} | Score:${analysis.totalScore} | ${analysis.pumpStatus} | VVF:${vvfApproval.confidence}%`,
+              notes: `Auto | TF:${cfg.timeframe} | Score:${analysis.totalScore} | ${analysis.pumpStatus} | VVF:${vvfApproval.confidence}%${cfg.useAtrSizing && atr ? ` | ATRsizing:$${Math.round(tradeSize)}` : ""}`,
             });
             openSymbols.add(pair.symbol);
-            runningBalance -= cfg.tradeSize;
-            log(`✅ DESCHIS ${pair.symbol} | Score: ${analysis.totalScore} | Balanță rămasă: $${runningBalance.toFixed(2)}`);
+            runningBalance -= tradeSize;
+            log(`✅ DESCHIS ${pair.symbol} | Score: ${analysis.totalScore} | $${Math.round(tradeSize)}${cfg.useAtrSizing && atr ? ` (ATR ${analysis.atrPercent}% → stop ${atr.stopPct.toFixed(1)}%)` : ""} | Balanță rămasă: $${runningBalance.toFixed(2)}`);
             opened++;
           }
         }

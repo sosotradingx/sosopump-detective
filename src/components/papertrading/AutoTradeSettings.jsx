@@ -136,6 +136,23 @@ export default function AutoTradeSettings({ config, onChange, onClose }) {
             <ToggleRow label="Închide la Take Profit" configKey="autoTP" />
             <ToggleRow label="Închide la Stop Loss" configKey="autoSL" />
             <ToggleRow label="Exit la Scor < 20" configKey="autoExitLowScore" description="Închide dacă semnalul dispare" />
+            <ToggleRow
+              label="Sizing pe volatilitate (ATR)"
+              configKey="useAtrSizing"
+              description="Mărime din ATR (stop = 1.5× ATR), risc fix pe tranzacție, limitat la 0.5×–1.5× valoarea de mai sus"
+            />
+            {local.useAtrSizing && (
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1 block">
+                  Risc pe tranzacție ({local.riskPerTradePct ?? 1}% din balanță)
+                </Label>
+                <Input type="number" min="0.25" max="5" step="0.25" value={local.riskPerTradePct ?? 1}
+                  onChange={e => set("riskPerTradePct", Number(e.target.value))} className="bg-secondary" />
+              </div>
+            )}
+            <div className="bg-destructive/5 border border-destructive/20 rounded-lg p-2 text-xs text-muted-foreground">
+              Kill-switch permanent: fără poziții noi la -3% într-o zi, 4 pierderi la rând sau drawdown de 15% din vârf.
+            </div>
           </section>
 
           {/* Partial Take Profit */}
