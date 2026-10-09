@@ -14,6 +14,8 @@ import ScoreBreakdown from "@/components/dashboard/ScoreBreakdown";
 import TopSignalCard from "@/components/dashboard/TopSignalCard";
 import LiquidationPanel from "@/components/dashboard/LiquidationPanel";
 import AlertToggle from "@/components/dashboard/AlertToggle";
+import MarketContextCard from "@/components/dashboard/MarketContextCard";
+import MoversPanel from "@/components/dashboard/MoversPanel";
 import { Activity, TrendingUp, Zap, BarChart3, RefreshCw, Loader2, Skull, Eye, ShieldAlert, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -29,6 +31,8 @@ export default function Dashboard() {
   const [topPair, setTopPair] = useState(null);
   const [exchange, setExchange] = useState(getPreferredExchange);
   const [universeInfo, setUniverseInfo] = useState({ scanned: 0, climbers: 0 });
+  const [climbers, setClimbers] = useState([]);
+  const [marketCtx, setMarketCtx] = useState(null);
   const [logStats, setLogStats] = useState(null);
   const [liq, setLiq] = useState(null);
 
@@ -46,6 +50,7 @@ export default function Dashboard() {
     });
     const climberSet = new Set(climbers.map(c => c.symbol));
     setUniverseInfo({ scanned, climbers: climbers.length });
+    setClimbers(climbers);
 
     // Stage 1: deep 1h history (300 candles => proper EMA200 warm-up + z-scores)
     const stage1 = [];
@@ -121,6 +126,7 @@ export default function Dashboard() {
     setPairs(merged);
     setTopPair([...merged].sort((a, b) => (b.strength || 0) - (a.strength || 0))[0] || null);
     setLastUpdate(new Date());
+    setMarketCtx({ btcCtx, breadthPct });
     setLoading(false);
 
     // Signal logging: outcomes (+1h/+4h/+24h), dedupe and cooldown per symbol
@@ -270,6 +276,12 @@ export default function Dashboard() {
             onSelectPair={(symbol) => navigate(createPageUrl("PairDetail") + `?symbol=${symbol}&exchange=${exchange}`)} />
         </div>
         <div className="space-y-4">
+          <MarketContextCard
+            btcCtx={marketCtx?.btcCtx}
+            breadthPct={marketCtx?.breadthPct}
+            pairs={pairs}
+            climbers={climbers}
+            onSelectSymbol={(symbol) => navigate(createPageUrl("PairDetail") + `?symbol=${symbol}&exchange=${exchange}`)} />
           <LiquidationPanel liq={liq} exchange={exchange} />
           {topPair &&
             <>
@@ -277,6 +289,9 @@ export default function Dashboard() {
               {topPair.base && <ScoreBreakdown analysis={topPair.base} />}
             </>
           }
+          <MoversPanel
+            pairs={pairs}
+            onSelectSymbol={(symbol) => navigate(createPageUrl("PairDetail") + `?symbol=${symbol}&exchange=${exchange}`)} />
         </div>
       </div>
     </div>
