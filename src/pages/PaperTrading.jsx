@@ -34,12 +34,26 @@ export default function PaperTrading() {
     refetchInterval: 30000, // monitorul SL/TP din AutoBotContext invalidă query-ul la schimbare
   });
 
-  // Istoric complet de tranzacții închise (folosit pentru calculul balanței cumulate)
+  // Doar tranzacțiile închise în ultimele 24h (istoric + win rate). Înainte se citeau 5000 de
+  // tranzacții la fiecare 60s → limita de trafic de citiri era depășită.
   const { data: closedTrades = [] } = useQuery({
     queryKey: ["paper-trades", "closed", user?.email],
-    queryFn: () => base44.entities.PaperTrade.filter({ created_by: user.email, status: "closed" }, "-created_date", 5000),
+    queryFn: () => base44.entities.PaperTrade.filter({
+      created_by: user.email, status: "closed",
+      updated_date: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() },
+    }, "-updated_date", 200),
     enabled: !!user,
-    refetchInterval: 60000,
+    refetchInterval: 120000,
+  });
+
+  // P&L total realizat — calculat pe server (agregare), fără transfer de înregistrări
+  const { data: pnlAgg } = useQuery({
+    queryKey: ["paper-trades", "pnl-total", user?.email],
+    queryFn: () => base44.entities.PaperTrade.aggregate({
+      query: { created_by: user.email, status: "closed" }, sum: ["pnl_usd"],
+    }),
+    enabled: !!user,
+    refetchInterval: 120000,
   });
 
   // Tranzacții închise în ultimele 24h - se resetează zilnic pentru win rate / istoric afișat
@@ -129,7 +143,7 @@ export default function PaperTrading() {
   };
 
   const initialBalance = 10000;
-  const totalPnL = closedTrades.reduce((s, t) => s + (t.pnl_usd || 0), 0);
+  const totalPnL = pnlAgg?.rows?.[0]?.sum_pnl_usd || 0;
   // Capital blocat în pozițiile deschise (tradeSize * cantitate la intrare)
   const lockedCapital = openTrades.reduce((s, t) => s + (t.entry_price * t.quantity), 0);
   const unrealizedPnL = openTrades.reduce((s, t) => {

@@ -50,6 +50,7 @@ export function HarmonicBotProvider({ children }) {
   const scanTimerRef = useRef(null);
   const monitorTimerRef = useRef(null);
   const realizedPnLRef = useRef(0);
+  const pendingRef = useRef([]);
   const activityRef = useRef(false);
 
   useEffect(() => { cfgRef.current = harmonicConfig; saveHarmonicConfig(harmonicConfig); }, [harmonicConfig]);
@@ -65,8 +66,11 @@ export function HarmonicBotProvider({ children }) {
       const [pend, open, closed] = await Promise.all([
         base44.entities.HarmonicSignal.filter({ created_by: user.email, status: "pending" }, "-created_date", 200).catch(() => []),
         base44.entities.PaperTrade.filter({ created_by: user.email, status: "open" }, "-created_date", 200).catch(() => []),
-        base44.entities.PaperTrade.filter({ created_by: user.email, status: "closed" }, "-created_date", 5000).catch(() => []),
+        // Doar tranzacțiile HARM (regex pe notes) și doar ultimele 100 — înainte se citeau
+        // 5000 de tranzacții închise la fiecare scanare → limita de trafic de citiri.
+        base44.entities.PaperTrade.filter({ created_by: user.email, status: "closed", notes: { $regex: "^HARM" } }, "-created_date", 100).catch(() => []),
       ]);
+      pendingRef.current = pend;
       setPendingSignals(pend);
       setHarmonicOpen(open.filter(isHarmonic));
       setHarmonicClosed(closed.filter(isHarmonic));
@@ -78,8 +82,8 @@ export function HarmonicBotProvider({ children }) {
     (async () => {
       const u = await base44.auth.me().catch(() => null);
       if (!u) return;
-      const closed = await base44.entities.PaperTrade.filter({ created_by: u.email, status: "closed" }, "-created_date", 5000).catch(() => []);
-      realizedPnLRef.current = closed.filter(isHarmonic).reduce((s, t) => s + (t.pnl_usd || 0), 0);
+      const closed = await base44.entities.PaperTrade.filter({ created_by: u.email, status: "closed", notes: { $regex: "^HARM" } }, "-created_date", 100).catch(() => []);
+      realizedPnLRef.current = closed.reduce((s, t) => s + (t.pnl_usd || 0), 0);
       await refreshLists(u);
     })();
   }, [refreshLists]);
@@ -112,13 +116,21 @@ export function HarmonicBotProvider({ children }) {
         return;
       }
 
-      const existing = await base44.entities.HarmonicSignal.filter({ created_by: user.email }, "-created_date", 2000).catch(() => []);
-      const seen = new Set(existing.map(s => `${s.symbol}|${s.d_pivot_time}|${s.pattern_name}`));
+      // Dedup doar pe fereastra de lumânări a scanului (200 bare) — semnalele mai vechi
+      // nu mai pot fi re-detectate, iar citirea lor umfla traficul de citiri.
+      const tfMs = { "1m": 60000, "5m": 300000, "15m": 900000, "30m": 1800000, "1h": 3600000, "4h": 14400000, "1d": 86400000 }[cfg.timeframe] || 3600000;
+      const pivotWindowStart = new Date(Date.now() - 200 * tfMs * 1.2).toISOString();
+      const seen = new Set();
 
       let scanned = 0, newSignals = 0;
       const BATCH = 12;
       for (let bi = 0; bi < pairs.length; bi += BATCH) {
         const chunk = pairs.slice(bi, bi + BATCH);
+        // Dedup doar pentru simbolurile din lot: citire mică, dar completă pentru perechile evaluate.
+        const chunkSignals = await base44.entities.HarmonicSignal.filter({
+          created_by: user.email, symbol: { $in: chunk.map(p => p.symbol) }, d_pivot_time: { $gte: pivotWindowStart },
+        }, "-created_date", 300).catch(() => []);
+        chunkSignals.forEach(s => seen.add(`${s.symbol}|${s.d_pivot_time}|${s.pattern_name}`));
         await Promise.all(chunk.map(async (pair) => {
           try {
             scanned++;
@@ -167,10 +179,10 @@ export function HarmonicBotProvider({ children }) {
       const cfg = cfgRef.current;
       const user = await base44.auth.me().catch(() => null);
       if (!user) return;
-      const [pending, openAll] = await Promise.all([
-        base44.entities.HarmonicSignal.filter({ created_by: user.email, status: "pending" }, "-created_date", 200).catch(() => []),
-        base44.entities.PaperTrade.filter({ created_by: user.email, status: "open" }, "-created_date", 200).catch(() => []),
-      ]);
+      // Semnalele pending vin din cache-ul actualizat de refreshLists (la fiecare scan și la
+      // fiecare modificare), nu re-citite la fiecare ciclu de 15s — era principala sursă de citiri.
+      const pending = pendingRef.current;
+      const openAll = await base44.entities.PaperTrade.filter({ created_by: user.email, status: "open" }, "-created_date", 50).catch(() => []);
       const harmonicOpenList = openAll.filter(isHarmonic);
       activityRef.current = pending.length > 0 || harmonicOpenList.length > 0;
       const openSymbols = new Set(openAll.map(t => t.symbol));

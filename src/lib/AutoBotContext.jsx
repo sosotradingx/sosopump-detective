@@ -204,12 +204,23 @@ export function AutoBotProvider({ children }) {
       const cfg = autoConfigRef.current;
       const currentUser = await base44.auth.me().catch(() => null);
       if (!currentUser) return;
-      // Citiri reduse: doar pozițiile deschise (max 200) + ultimele închise (max 500).
-      // Înainte se cereau 5000 de înregistrări per scanare → limita de trafic de citire era depășită.
-      const [freshOpen, freshClosed] = await Promise.all([
+      // Citiri minime: pozițiile deschise + profitul realizat prin agregare (fără transfer de
+      // înregistrări) + doar tranzacțiile închise din fereastra de cooldown (pentru dedup).
+      // Înainte se citeau 500 de tranzacții închise la fiecare scanare → limita de trafic depășită.
+      const cooldownMs = (cfg.cooldownMinutes || 60) * 60 * 1000;
+      const cooldownWindowStart = new Date(Date.now() - cooldownMs * 1.5).toISOString();
+      const [freshOpen, closedAgg, recentClosed] = await Promise.all([
         base44.entities.PaperTrade.filter({ created_by: currentUser.email, status: "open" }, "-created_date", 200),
-        base44.entities.PaperTrade.filter({ created_by: currentUser.email, status: "closed" }, "-created_date", 500),
+        base44.entities.PaperTrade.aggregate({
+          query: { created_by: currentUser.email, status: "closed" },
+          sum: ["pnl_usd"],
+        }).catch(() => null),
+        base44.entities.PaperTrade.filter({
+          created_by: currentUser.email, status: "closed",
+          updated_date: { $gte: cooldownWindowStart },
+        }, "-updated_date", 100).catch(() => []),
       ]);
+      const freshClosed = Array.isArray(recentClosed) ? recentClosed : [];
       const openSymbols = new Set(freshOpen.map(t => t.symbol));
 
       const isPerpetual = cfg.marketSource !== "spot";
@@ -220,7 +231,7 @@ export function AutoBotProvider({ children }) {
       pairs.forEach(p => { priceMap[p.symbol] = p.price; });
 
       const INITIAL_BALANCE = 10000;
-      const realizedPnL = freshClosed.reduce((s, t) => s + (t.pnl_usd || 0), 0);
+      const realizedPnL = closedAgg?.rows?.[0]?.sum_pnl_usd || 0;
       const lockedCapital = freshOpen.reduce((s, t) => s + (t.entry_price * t.quantity), 0);
       const availableBalance = INITIAL_BALANCE + realizedPnL - lockedCapital;
 
@@ -236,7 +247,6 @@ export function AutoBotProvider({ children }) {
       }
 
       const now = Date.now();
-      const cooldownMs = (cfg.cooldownMinutes || 60) * 60 * 1000;
       const lastClosedMap = {};
       freshClosed.forEach(t => {
         const closedAt = new Date(t.updated_date || t.created_date).getTime();
