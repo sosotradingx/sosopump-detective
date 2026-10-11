@@ -18,6 +18,7 @@ import MarketContextCard from "@/components/dashboard/MarketContextCard";
 import MoversPanel from "@/components/dashboard/MoversPanel";
 import FlowFactorsPanel from "@/components/dashboard/FlowFactorsPanel";
 import RiskPanel from "@/components/dashboard/RiskPanel";
+import RadarPanel from "@/components/dashboard/RadarPanel";
 import { useRiskGuard } from "@/hooks/useRiskGuard";
 import { base44 } from "@/api/base44Client";
 import { Activity, TrendingUp, Zap, BarChart3, RefreshCw, Loader2, Skull, Eye, ShieldAlert, Database } from "lucide-react";
@@ -274,6 +275,11 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <div className="grid lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-3 min-w-0">
+          <RadarPanel
+            pairs={pairs}
+            onSelectSymbol={(symbol) => navigate(createPageUrl("PairDetail") + `?symbol=${symbol}&exchange=${exchange}`)} />
+        </div>
         <div className="lg:col-span-2 min-w-0">
           <TopPumpsTable
             data={pairs}
